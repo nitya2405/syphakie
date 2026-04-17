@@ -16,7 +16,7 @@ import {
   ApiError,
 } from "@/lib/api";
 
-type Modality = "text" | "image";
+type Modality = "text" | "image" | "video" | "audio";
 type Mode = "manual" | "auto";
 
 function timeAgo(iso: string): string {
@@ -48,7 +48,9 @@ function GenerateContent() {
   const urlMode     = searchParams.get("mode") as Mode | null;
 
   const [modality, setModality] = useState<Modality>(
-    urlModality === "image" ? "image" : "text",
+    (["text","image","video","audio"] as Modality[]).includes(urlModality as Modality)
+      ? (urlModality as Modality)
+      : "text",
   );
   const [mode, setMode] = useState<Mode>(
     urlMode === "manual" ? "manual" : "auto",
@@ -194,8 +196,10 @@ function GenerateContent() {
                   onChange={(e) => setModality(e.target.value as Modality)}
                   className="w-full border border-gray-300 rounded-md px-3 py-2 text-sm focus:outline-none focus:ring-2 focus:ring-black bg-white"
                 >
-                  <option value="text">Text</option>
+                  <option value="text">Text / Chat</option>
                   <option value="image">Image</option>
+                  <option value="video">Video</option>
+                  <option value="audio">Audio / Speech</option>
                 </select>
               </div>
               <div>
@@ -239,9 +243,10 @@ function GenerateContent() {
                 value={prompt}
                 onChange={(e) => setPrompt(e.target.value)}
                 placeholder={
-                  modality === "text"
-                    ? "Write a haiku about clouds."
-                    : "A photo of a red panda in snow."
+                  modality === "text"  ? "Write a haiku about clouds." :
+                  modality === "image" ? "A photo of a red panda in snow." :
+                  modality === "video" ? "A time-lapse of a sunset over the ocean." :
+                                        "A calm, cinematic piano melody."
                 }
                 rows={4}
                 className="w-full border border-gray-300 rounded-md px-3 py-2 text-sm focus:outline-none focus:ring-2 focus:ring-black resize-none"
@@ -286,6 +291,16 @@ function GenerateContent() {
                   // eslint-disable-next-line @next/next/no-img-element
                   <img src={result.output.url} alt="Generated image" className="max-w-full rounded" />
                 )}
+                {result.modality === "video" && result.output.url && (
+                  <video
+                    src={result.output.url}
+                    controls
+                    className="max-w-full rounded w-full"
+                  />
+                )}
+                {result.modality === "audio" && result.output.url && (
+                  <audio src={result.output.url} controls className="w-full" />
+                )}
               </div>
 
               <div className="border-t border-gray-100 px-4 py-2 flex items-center gap-2">
@@ -297,7 +312,7 @@ function GenerateContent() {
                     {copySuccess ? "Copied!" : "Copy"}
                   </button>
                 )}
-                {result.modality === "image" && result.output.url && (
+                {(result.modality === "image" || result.modality === "video" || result.modality === "audio") && result.output.url && (
                   <button
                     onClick={() => handleDownload(result.output.url!)}
                     className="text-xs px-3 py-1.5 border border-gray-300 rounded hover:bg-gray-50 transition-colors"
@@ -334,7 +349,12 @@ function GenerateContent() {
                       onClick={() => item.status === "success" ? toggleHistory(item.request_id) : undefined}
                       className={`w-full text-left px-4 py-3 flex items-center gap-3 text-sm hover:bg-gray-50 transition-colors ${item.status !== "success" ? "cursor-default opacity-60" : ""}`}
                     >
-                      <span className={`shrink-0 text-xs font-medium px-1.5 py-0.5 rounded ${item.modality === "image" ? "bg-purple-100 text-purple-700" : "bg-blue-100 text-blue-700"}`}>
+                      <span className={`shrink-0 text-xs font-medium px-1.5 py-0.5 rounded ${
+                        item.modality === "image" ? "bg-purple-100 text-purple-700" :
+                        item.modality === "video" ? "bg-rose-100 text-rose-700" :
+                        item.modality === "audio" ? "bg-amber-100 text-amber-700" :
+                        "bg-blue-100 text-blue-700"
+                      }`}>
                         {item.modality}
                       </span>
                       <span className="flex-1 text-gray-700 truncate min-w-0">
@@ -381,6 +401,12 @@ function GenerateContent() {
                               {out.modality === "image" && out.output.url && (
                                 // eslint-disable-next-line @next/next/no-img-element
                                 <img src={out.output.url} alt="Generated image" className="max-w-full rounded" />
+                              )}
+                              {out.modality === "video" && out.output.url && (
+                                <video src={out.output.url} controls className="max-w-full rounded w-full" />
+                              )}
+                              {out.modality === "audio" && out.output.url && (
+                                <audio src={out.output.url} controls className="w-full" />
                               )}
                             </div>
                           );

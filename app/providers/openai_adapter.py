@@ -11,6 +11,8 @@ class OpenAIAdapter(BaseAdapter):
             return await self._text(request)
         elif request.modality == "image":
             return await self._image(request)
+        elif request.modality == "audio":
+            return await self._audio(request)
         raise ValueError(f"OpenAI adapter does not support modality: {request.modality}")
 
     async def _text(self, request: AdapterRequest) -> AdapterResponse:
@@ -80,4 +82,34 @@ class OpenAIAdapter(BaseAdapter):
             units_used=1,
             unit_type="image",
             raw_response=data,
+        )
+
+    async def _audio(self, request: AdapterRequest) -> AdapterResponse:
+        payload = {
+            "model": request.model_id,
+            "input": request.prompt,
+            "voice": request.params.get("voice", "alloy"),
+            "response_format": "mp3",
+        }
+        try:
+            async with httpx.AsyncClient(timeout=60) as client:
+                resp = await client.post(
+                    "https://api.openai.com/v1/audio/speech",
+                    headers={"Authorization": f"Bearer {request.api_key}"},
+                    json=payload,
+                )
+                resp.raise_for_status()
+                file_bytes = resp.content
+        except httpx.HTTPStatusError as e:
+            raise ProviderError("openai", f"HTTP {e.response.status_code}: {e.response.text[:300]}")
+        except httpx.RequestError as e:
+            raise ProviderError("openai", f"Request failed: {str(e)}")
+
+        return AdapterResponse(
+            content=None,
+            file_bytes=file_bytes,
+            file_extension="mp3",
+            units_used=float(len(request.prompt)),
+            unit_type="character",
+            raw_response={},
         )

@@ -45,6 +45,8 @@ export interface ModelOption {
   display_name: string;
   provider: string;
   modality: string;
+  task_type: string | null;
+  vendor: string | null;
   requires_user_key: boolean;
   cost_per_unit: number;
   unit_type: string;
@@ -76,6 +78,16 @@ export interface ModelFull extends ModelOption {
   is_active: boolean;
   avg_latency_ms: number | null;
   quality_score: number | null;
+}
+
+// Providers that use fal.ai infrastructure (user needs fal key, not brand key)
+export const FAL_BACKED_PROVIDERS = new Set([
+  "kling", "luma", "hailuo", "wan", "bytedance", "runway",
+]);
+
+// Map a model's provider to the actual key provider the user must supply
+export function keyProviderFor(provider: string): string {
+  return FAL_BACKED_PROVIDERS.has(provider) ? "fal" : provider;
 }
 
 export interface UsageSummary {

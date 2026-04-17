@@ -8,6 +8,10 @@ class Settings(BaseSettings):
     OPENAI_API_KEY: str = ""
     STABILITY_API_KEY: str = ""
     ANTHROPIC_API_KEY: str = ""
+    GOOGLE_API_KEY: str = ""
+    XAI_API_KEY: str = ""
+    ELEVENLABS_API_KEY: str = ""
+    QWEN_API_KEY: str = ""
     OUTPUT_DIR: str = "outputs"
     BASE_URL: str = "http://localhost:8000"
     DEFAULT_CREDITS: int = 1000

@@ -17,6 +17,8 @@ class ModelRegistry(Base):
     unit_type = Column(String, nullable=False)      # "token" | "image"
     avg_latency_ms = Column(Integer, nullable=True)
     quality_score = Column(Numeric(3, 2), nullable=True)
+    task_type = Column(String, nullable=True)   # "chat" | "text_to_image" | "text_to_video" | etc.
+    vendor = Column(String, nullable=True)      # underlying model vendor when provider is a proxy (e.g. fal)
     is_active = Column(Boolean, nullable=False, default=True)
     requires_user_key = Column(Boolean, nullable=False, default=False)
     created_at = Column(DateTime(timezone=True), server_default=func.now(), nullable=False)

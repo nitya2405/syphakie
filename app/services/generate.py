@@ -13,6 +13,10 @@ from app.services.credits import CreditService
 from app.services.usage import UsageService
 from app.services.provider_keys import ProviderKeyService
 
+# Providers that route through fal.ai infrastructure
+_FAL_BACKED = {"kling", "luma", "hailuo", "wan", "bytedance", "runway", "blackforestlabs"}
+
+
 class GenerationService:
     def __init__(self, db: Session):
         self.db = db
@@ -23,8 +27,8 @@ class GenerationService:
         self.provider_key_svc = ProviderKeyService(db)
 
     def _resolve_key(self, provider: str, user) -> str:
-        # All providers require user-supplied keys — no system keys
-        return self.provider_key_svc.get_key(user.id, provider)
+        key_provider = "fal" if provider in _FAL_BACKED else provider
+        return self.provider_key_svc.get_key(user.id, key_provider)
 
     async def run(self, user: User, request: GenerateRequest) -> GenerateResponse:
         request_id = str(uuid.uuid4())
@@ -122,6 +126,13 @@ class GenerationService:
             self.db.commit()
             raise
 
+        _mime_prefix = {"image": "image", "video": "video", "audio": "audio"}
+        mime_type = (
+            f"{_mime_prefix[request.modality]}/{adapter_resp.file_extension}"
+            if request.modality in _mime_prefix and adapter_resp.file_extension
+            else None
+        )
+
         return GenerateResponse(
             success=True,
             request_id=request_id,
@@ -132,7 +143,7 @@ class GenerationService:
                 type=request.modality,
                 content=adapter_resp.content,
                 url=output_url,
-                mime_type=f"image/{adapter_resp.file_extension}" if request.modality == "image" else None,
+                mime_type=mime_type,
             ),
             meta=MetaSchema(
                 latency_ms=latency_ms,

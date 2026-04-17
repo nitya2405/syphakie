@@ -16,7 +16,10 @@ router = APIRouter()
 pwd_context = CryptContext(schemes=["bcrypt"], deprecated="auto")
 
 # Providers users can store keys for
-SUPPORTED_PROVIDERS = {"openai", "fal", "stability", "anthropic"}
+SUPPORTED_PROVIDERS = {
+    "openai", "fal", "stability", "anthropic",
+    "google", "xai", "elevenlabs", "qwen",
+}
 
 
 # ── Helpers ──────────────────────────────────────────────────────────────────

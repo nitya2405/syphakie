@@ -13,8 +13,8 @@ class GenerateRequest(BaseModel):
     @field_validator("modality")
     @classmethod
     def validate_modality(cls, v):
-        if v not in ("text", "image"):
-            raise ValueError("modality must be 'text' or 'image'")
+        if v not in ("text", "image", "video", "audio"):
+            raise ValueError("modality must be 'text', 'image', 'video', or 'audio'")
         return v
 
     @field_validator("mode")
