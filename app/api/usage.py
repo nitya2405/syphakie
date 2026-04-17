@@ -45,6 +45,7 @@ def get_usage(
                 "credits_deducted": r.credits_deducted,
                 "latency_ms": r.latency_ms,
                 "error_message": r.error_message,
+                "prompt": r.input_payload.get("prompt") if r.input_payload else None,
                 "created_at": r.created_at.isoformat() if r.created_at else None,
             }
             for r in records

@@ -23,13 +23,17 @@ def get_output(
             ext = filename.split(".")[-1]
             modality = "text" if ext == "txt" else "image"
             url = f"{settings.BASE_URL}/files/{user_id}/{request_id}/{filename}"
+            content = None
+            if ext == "txt":
+                with open(full_path, "r", encoding="utf-8") as f:
+                    content = f.read()
             return {
                 "request_id": request_id,
                 "modality": modality,
                 "output": {
                     "type": modality,
                     "url": url,
-                    "content": None,
+                    "content": content,
                 },
             }
 

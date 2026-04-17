@@ -92,9 +92,43 @@ export async function generate(body: {
   });
 }
 
+export interface HistoryRecord {
+  request_id: string;
+  modality: string;
+  provider: string | null;
+  model: string | null;
+  status: string;
+  credits_deducted: number;
+  latency_ms: number | null;
+  error_message: string | null;
+  prompt: string | null;
+  created_at: string;
+}
+
+export interface OutputData {
+  request_id: string;
+  modality: string;
+  output: {
+    type: string;
+    content: string | null;
+    url: string | null;
+  };
+}
+
 export async function fetchBalance(): Promise<number> {
   const data = await apiFetch<{ balance: number }>("/api/v1/credits");
   return data.balance;
+}
+
+export async function fetchHistory(limit = 10): Promise<HistoryRecord[]> {
+  const data = await apiFetch<{ items: HistoryRecord[] }>(
+    `/api/v1/usage?limit=${limit}`,
+  );
+  return data.items;
+}
+
+export async function fetchOutput(requestId: string): Promise<OutputData> {
+  return apiFetch<OutputData>(`/api/v1/outputs/${requestId}`);
 }
 
 export async function verifyKey(): Promise<{ email: string; role: string }> {

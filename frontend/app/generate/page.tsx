@@ -1,12 +1,16 @@
 "use client";
-import { useState, useEffect, useCallback } from "react";
+import { useState, useEffect, useCallback, useRef } from "react";
 import { useRouter } from "next/navigation";
 import { getApiKey, clearApiKey } from "@/lib/auth";
 import {
   fetchModels,
   generate,
   fetchBalance,
+  fetchHistory,
+  fetchOutput,
   GenerateResponse,
+  HistoryRecord,
+  OutputData,
   ModelOption,
   ApiError,
 } from "@/lib/api";
@@ -14,40 +18,93 @@ import {
 type Modality = "text" | "image";
 type Mode = "manual" | "auto";
 
+function timeAgo(iso: string): string {
+  const diff = Date.now() - new Date(iso).getTime();
+  const mins = Math.floor(diff / 60000);
+  if (mins < 1) return "just now";
+  if (mins < 60) return `${mins}m ago`;
+  const hrs = Math.floor(mins / 60);
+  if (hrs < 24) return `${hrs}h ago`;
+  return `${Math.floor(hrs / 24)}d ago`;
+}
+
+function Spinner() {
+  return (
+    <svg
+      className="animate-spin h-4 w-4 text-white"
+      fill="none"
+      viewBox="0 0 24 24"
+    >
+      <circle
+        className="opacity-25"
+        cx="12"
+        cy="12"
+        r="10"
+        stroke="currentColor"
+        strokeWidth="4"
+      />
+      <path
+        className="opacity-75"
+        fill="currentColor"
+        d="M4 12a8 8 0 018-8v8H4z"
+      />
+    </svg>
+  );
+}
+
 export default function GeneratePage() {
   const router = useRouter();
 
+  // Form state
   const [modality, setModality] = useState<Modality>("text");
   const [mode, setMode] = useState<Mode>("auto");
   const [prompt, setPrompt] = useState("");
   const [selectedModel, setSelectedModel] = useState("");
-
   const [models, setModels] = useState<ModelOption[]>([]);
+
+  // UI state
   const [balance, setBalance] = useState<number | null>(null);
   const [loading, setLoading] = useState(false);
   const [result, setResult] = useState<GenerateResponse | null>(null);
   const [error, setError] = useState("");
+  const [copySuccess, setCopySuccess] = useState(false);
+
+  // History state
+  const [history, setHistory] = useState<HistoryRecord[]>([]);
+  const [expandedId, setExpandedId] = useState<string | null>(null);
+  const [expandedOutputs, setExpandedOutputs] = useState<
+    Record<string, OutputData | "loading" | "error">
+  >({});
+
+  const copyTimer = useRef<ReturnType<typeof setTimeout> | null>(null);
 
   // Redirect if no key
   useEffect(() => {
     if (!getApiKey()) router.replace("/login");
   }, [router]);
 
-  // Load balance
   const loadBalance = useCallback(async () => {
     try {
-      const b = await fetchBalance();
-      setBalance(b);
+      setBalance(await fetchBalance());
     } catch {
-      // balance display is non-critical
+      // non-critical
+    }
+  }, []);
+
+  const loadHistory = useCallback(async () => {
+    try {
+      setHistory(await fetchHistory(10));
+    } catch {
+      // non-critical
     }
   }, []);
 
   useEffect(() => {
     loadBalance();
-  }, [loadBalance]);
+    loadHistory();
+  }, [loadBalance, loadHistory]);
 
-  // Load models when modality changes (only needed for manual mode)
+  // Refresh models when modality changes in manual mode
   useEffect(() => {
     if (mode !== "manual") return;
     fetchModels(modality)
@@ -61,11 +118,11 @@ export default function GeneratePage() {
   function handleModeChange(m: Mode) {
     setMode(m);
     setSelectedModel("");
+    setModels([]);
   }
 
-  async function handleGenerate(e: React.FormEvent) {
-    e.preventDefault();
-    if (!prompt.trim()) return;
+  async function runGenerate() {
+    if (!prompt.trim() || loading) return;
     setLoading(true);
     setError("");
     setResult(null);
@@ -75,12 +132,11 @@ export default function GeneratePage() {
         modality,
         mode,
         prompt: prompt.trim(),
-        ...(mode === "manual" && selectedModel
-          ? { model: selectedModel }
-          : {}),
+        ...(mode === "manual" && selectedModel ? { model: selectedModel } : {}),
       });
       setResult(res);
       setBalance(res.meta.credits_remaining);
+      loadHistory();
     } catch (err) {
       if (err instanceof ApiError) {
         if (err.status === 401) {
@@ -90,22 +146,59 @@ export default function GeneratePage() {
         }
         setError(err.message);
       } else {
-        setError("Something went wrong. Check that the backend is running.");
+        setError("Generation failed. Is the backend running?");
       }
     } finally {
       setLoading(false);
     }
   }
 
-  function handleLogout() {
-    clearApiKey();
-    router.replace("/login");
+  async function handleCopy(text: string) {
+    try {
+      await navigator.clipboard.writeText(text);
+      setCopySuccess(true);
+      if (copyTimer.current) clearTimeout(copyTimer.current);
+      copyTimer.current = setTimeout(() => setCopySuccess(false), 2000);
+    } catch {
+      // clipboard blocked
+    }
+  }
+
+  function handleDownload(url: string) {
+    fetch(url)
+      .then((r) => r.blob())
+      .then((blob) => {
+        const href = URL.createObjectURL(blob);
+        const a = document.createElement("a");
+        a.href = href;
+        a.download = "syphakie-image.png";
+        a.click();
+        URL.revokeObjectURL(href);
+      });
+  }
+
+  async function toggleHistory(id: string) {
+    if (expandedId === id) {
+      setExpandedId(null);
+      return;
+    }
+    setExpandedId(id);
+
+    if (expandedOutputs[id]) return; // already fetched
+
+    setExpandedOutputs((prev) => ({ ...prev, [id]: "loading" }));
+    try {
+      const out = await fetchOutput(id);
+      setExpandedOutputs((prev) => ({ ...prev, [id]: out }));
+    } catch {
+      setExpandedOutputs((prev) => ({ ...prev, [id]: "error" }));
+    }
   }
 
   return (
     <div className="min-h-screen flex flex-col">
       {/* Header */}
-      <header className="border-b border-gray-200 bg-white px-4 py-3 flex items-center justify-between">
+      <header className="border-b border-gray-200 bg-white px-4 py-3 flex items-center justify-between sticky top-0 z-10">
         <span className="font-semibold text-sm">SyphaKie</span>
         <div className="flex items-center gap-4 text-sm text-gray-500">
           {balance !== null && (
@@ -115,7 +208,7 @@ export default function GeneratePage() {
             </span>
           )}
           <button
-            onClick={handleLogout}
+            onClick={() => { clearApiKey(); router.replace("/login"); }}
             className="text-gray-400 hover:text-gray-700 transition-colors"
           >
             Logout
@@ -123,14 +216,15 @@ export default function GeneratePage() {
         </div>
       </header>
 
-      {/* Main */}
       <main className="flex-1 flex flex-col items-center px-4 py-10">
         <div className="w-full max-w-2xl space-y-8">
           <h1 className="text-xl font-semibold">Generate</h1>
 
-          {/* Form */}
-          <form onSubmit={handleGenerate} className="space-y-4">
-            {/* Modality + Mode row */}
+          {/* ── Form ─────────────────────────────────────────────────── */}
+          <form
+            onSubmit={(e) => { e.preventDefault(); runGenerate(); }}
+            className="space-y-4"
+          >
             <div className="grid grid-cols-2 gap-3">
               <div>
                 <label className="block text-xs font-medium text-gray-600 mb-1">
@@ -160,14 +254,13 @@ export default function GeneratePage() {
               </div>
             </div>
 
-            {/* Model selector — manual only */}
             {mode === "manual" && (
               <div>
                 <label className="block text-xs font-medium text-gray-600 mb-1">
                   Model
                 </label>
                 {models.length === 0 ? (
-                  <p className="text-sm text-gray-400">Loading models…</p>
+                  <p className="text-sm text-gray-400 py-2">Loading models…</p>
                 ) : (
                   <select
                     value={selectedModel}
@@ -176,8 +269,8 @@ export default function GeneratePage() {
                   >
                     {models.map((m) => (
                       <option key={m.model_id} value={m.model_id}>
-                        {m.display_name} — {m.provider}{" "}
-                        {m.requires_user_key ? "(your key)" : ""}
+                        {m.display_name} — {m.provider}
+                        {m.requires_user_key ? " (your key)" : ""}
                       </option>
                     ))}
                   </select>
@@ -185,7 +278,6 @@ export default function GeneratePage() {
               </div>
             )}
 
-            {/* Prompt */}
             <div>
               <label className="block text-xs font-medium text-gray-600 mb-1">
                 Prompt
@@ -203,63 +295,224 @@ export default function GeneratePage() {
               />
             </div>
 
-            {/* Submit */}
             <button
               type="submit"
               disabled={loading || !prompt.trim()}
-              className="w-full bg-black text-white rounded-md py-2.5 text-sm font-medium disabled:opacity-40 hover:bg-gray-800 transition-colors"
+              className="w-full bg-black text-white rounded-md py-2.5 text-sm font-medium disabled:opacity-40 hover:bg-gray-800 transition-colors flex items-center justify-center gap-2"
             >
+              {loading && <Spinner />}
               {loading ? "Generating…" : "Generate"}
             </button>
           </form>
 
-          {/* Error */}
+          {/* ── Error ────────────────────────────────────────────────── */}
           {error && (
             <div className="rounded-md border border-red-200 bg-red-50 px-4 py-3 text-sm text-red-700">
               {error}
             </div>
           )}
 
-          {/* Result */}
+          {/* ── Result ───────────────────────────────────────────────── */}
           {result && (
-            <div className="space-y-4">
-              <div className="border border-gray-200 rounded-md overflow-hidden">
-                {/* Output content */}
-                <div className="p-4 bg-white">
-                  {result.modality === "text" && result.output.content && (
-                    <p className="text-sm leading-relaxed whitespace-pre-wrap">
-                      {result.output.content}
-                    </p>
-                  )}
-                  {result.modality === "image" && result.output.url && (
-                    // eslint-disable-next-line @next/next/no-img-element
-                    <img
-                      src={result.output.url}
-                      alt="Generated image"
-                      className="max-w-full rounded"
-                    />
-                  )}
-                </div>
+            <div className="border border-gray-200 rounded-md overflow-hidden">
+              <div className="p-4 bg-white">
+                {result.modality === "text" && result.output.content && (
+                  <p className="text-sm leading-relaxed whitespace-pre-wrap">
+                    {result.output.content}
+                  </p>
+                )}
+                {result.modality === "image" && result.output.url && (
+                  // eslint-disable-next-line @next/next/no-img-element
+                  <img
+                    src={result.output.url}
+                    alt="Generated image"
+                    className="max-w-full rounded"
+                  />
+                )}
+              </div>
 
-                {/* Meta bar */}
-                <div className="border-t border-gray-100 bg-gray-50 px-4 py-2 flex flex-wrap gap-x-5 gap-y-1 text-xs text-gray-500">
-                  <span>
-                    <span className="font-medium text-gray-700">
-                      {result.meta.credits_used}
-                    </span>{" "}
-                    credits used
+              {/* Action buttons */}
+              <div className="border-t border-gray-100 px-4 py-2 flex items-center gap-2">
+                {result.modality === "text" && result.output.content && (
+                  <button
+                    onClick={() => handleCopy(result.output.content!)}
+                    className="text-xs px-3 py-1.5 border border-gray-300 rounded hover:bg-gray-50 transition-colors"
+                  >
+                    {copySuccess ? "Copied!" : "Copy"}
+                  </button>
+                )}
+                {result.modality === "image" && result.output.url && (
+                  <button
+                    onClick={() => handleDownload(result.output.url!)}
+                    className="text-xs px-3 py-1.5 border border-gray-300 rounded hover:bg-gray-50 transition-colors"
+                  >
+                    Download
+                  </button>
+                )}
+                <button
+                  onClick={runGenerate}
+                  disabled={loading}
+                  className="text-xs px-3 py-1.5 border border-gray-300 rounded hover:bg-gray-50 transition-colors disabled:opacity-40"
+                >
+                  Regenerate
+                </button>
+              </div>
+
+              {/* Meta bar */}
+              <div className="border-t border-gray-100 bg-gray-50 px-4 py-2 flex flex-wrap gap-x-5 gap-y-1 text-xs text-gray-500">
+                <span>
+                  <span className="font-medium text-gray-700">
+                    {result.meta.credits_used}
+                  </span>{" "}
+                  credits
+                </span>
+                <span>
+                  <span className="font-medium text-gray-700">
+                    {result.meta.latency_ms}ms
                   </span>
-                  <span>
-                    <span className="font-medium text-gray-700">
-                      {result.meta.latency_ms}ms
-                    </span>{" "}
-                    latency
-                  </span>
-                  <span>
-                    {result.provider} / {result.model}
-                  </span>
-                  <span className="capitalize">{result.meta.routing_mode}</span>
-                </div>
+                </span>
+                <span>
+                  {result.provider} / {result.model}
+                </span>
+                <span className="capitalize">{result.meta.routing_mode}</span>
+              </div>
+            </div>
+          )}
+
+          {/* ── Recent History ────────────────────────────────────────── */}
+          {history.length > 0 && (
+            <div className="space-y-2">
+              <h2 className="text-sm font-medium text-gray-700">Recent</h2>
+              <div className="border border-gray-200 rounded-md divide-y divide-gray-100 overflow-hidden">
+                {history.map((item) => (
+                  <div key={item.request_id}>
+                    {/* Row */}
+                    <button
+                      onClick={() =>
+                        item.status === "success"
+                          ? toggleHistory(item.request_id)
+                          : undefined
+                      }
+                      className={`w-full text-left px-4 py-3 flex items-center gap-3 text-sm hover:bg-gray-50 transition-colors ${
+                        item.status !== "success"
+                          ? "cursor-default opacity-60"
+                          : ""
+                      }`}
+                    >
+                      {/* Modality badge */}
+                      <span
+                        className={`shrink-0 text-xs font-medium px-1.5 py-0.5 rounded ${
+                          item.modality === "image"
+                            ? "bg-purple-100 text-purple-700"
+                            : "bg-blue-100 text-blue-700"
+                        }`}
+                      >
+                        {item.modality}
+                      </span>
+
+                      {/* Prompt */}
+                      <span className="flex-1 text-gray-700 truncate min-w-0">
+                        {item.prompt ?? "(no prompt)"}
+                      </span>
+
+                      {/* Right side meta */}
+                      <span className="shrink-0 text-gray-400 text-xs hidden sm:block">
+                        {item.model ?? "—"}
+                      </span>
+                      <span className="shrink-0 text-gray-400 text-xs">
+                        {item.credits_deducted}cr
+                      </span>
+                      <span className="shrink-0 text-gray-400 text-xs">
+                        {timeAgo(item.created_at)}
+                      </span>
+
+                      {/* Expand chevron */}
+                      {item.status === "success" && (
+                        <svg
+                          className={`shrink-0 w-3.5 h-3.5 text-gray-400 transition-transform ${
+                            expandedId === item.request_id ? "rotate-180" : ""
+                          }`}
+                          fill="none"
+                          stroke="currentColor"
+                          viewBox="0 0 24 24"
+                        >
+                          <path
+                            strokeLinecap="round"
+                            strokeLinejoin="round"
+                            strokeWidth={2}
+                            d="M19 9l-7 7-7-7"
+                          />
+                        </svg>
+                      )}
+
+                      {/* Failed badge */}
+                      {item.status === "failed" && (
+                        <span className="shrink-0 text-xs text-red-500">
+                          failed
+                        </span>
+                      )}
+                    </button>
+
+                    {/* Expanded output */}
+                    {expandedId === item.request_id && (
+                      <div className="border-t border-gray-100 bg-gray-50 px-4 py-3">
+                        {(() => {
+                          const out = expandedOutputs[item.request_id];
+                          if (!out || out === "loading") {
+                            return (
+                              <div className="flex items-center gap-2 text-sm text-gray-400">
+                                <svg
+                                  className="animate-spin h-3.5 w-3.5"
+                                  fill="none"
+                                  viewBox="0 0 24 24"
+                                >
+                                  <circle
+                                    className="opacity-25"
+                                    cx="12"
+                                    cy="12"
+                                    r="10"
+                                    stroke="currentColor"
+                                    strokeWidth="4"
+                                  />
+                                  <path
+                                    className="opacity-75"
+                                    fill="currentColor"
+                                    d="M4 12a8 8 0 018-8v8H4z"
+                                  />
+                                </svg>
+                                Loading…
+                              </div>
+                            );
+                          }
+                          if (out === "error") {
+                            return (
+                              <p className="text-sm text-gray-400">
+                                Output no longer available.
+                              </p>
+                            );
+                          }
+                          return (
+                            <div>
+                              {out.modality === "text" && out.output.content && (
+                                <p className="text-sm leading-relaxed whitespace-pre-wrap text-gray-700">
+                                  {out.output.content}
+                                </p>
+                              )}
+                              {out.modality === "image" && out.output.url && (
+                                // eslint-disable-next-line @next/next/no-img-element
+                                <img
+                                  src={out.output.url}
+                                  alt="Generated image"
+                                  className="max-w-full rounded"
+                                />
+                              )}
+                            </div>
+                          );
+                        })()}
+                      </div>
+                    )}
+                  </div>
+                ))}
               </div>
             </div>
           )}
