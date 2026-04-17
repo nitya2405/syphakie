@@ -7,6 +7,7 @@ class Settings(BaseSettings):
     DATABASE_URL: str = "postgresql://syphakie:syphakie@localhost:5432/syphakie"
     OPENAI_API_KEY: str = ""
     STABILITY_API_KEY: str = ""
+    ANTHROPIC_API_KEY: str = ""
     OUTPUT_DIR: str = "outputs"
     BASE_URL: str = "http://localhost:8000"
     DEFAULT_CREDITS: int = 1000

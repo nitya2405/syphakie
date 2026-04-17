@@ -61,6 +61,7 @@ function GenerateContent() {
   const [loading, setLoading] = useState(false);
   const [result, setResult] = useState<GenerateResponse | null>(null);
   const [error, setError] = useState("");
+  const [errorIsMissingKey, setErrorIsMissingKey] = useState(false);
   const [copySuccess, setCopySuccess] = useState(false);
 
   const [history, setHistory] = useState<HistoryRecord[]>([]);
@@ -111,6 +112,7 @@ function GenerateContent() {
     if (!prompt.trim() || loading) return;
     setLoading(true);
     setError("");
+    setErrorIsMissingKey(false);
     setResult(null);
     try {
       const res = await generate({
@@ -125,7 +127,12 @@ function GenerateContent() {
     } catch (err) {
       if (err instanceof ApiError) {
         if (err.status === 401) { clearApiKey(); router.replace("/login"); return; }
-        setError(err.message);
+        if (err.code === "MISSING_PROVIDER_KEY") {
+          setErrorIsMissingKey(true);
+          setError(err.message);
+        } else {
+          setError(err.message);
+        }
       } else {
         setError("Generation failed. Is the backend running?");
       }
@@ -255,6 +262,14 @@ function GenerateContent() {
           {error && (
             <div className="rounded-md border border-red-200 bg-red-50 px-4 py-3 text-sm text-red-700">
               {error}
+              {errorIsMissingKey && (
+                <span>
+                  {" "}→{" "}
+                  <a href="/models" className="underline font-medium hover:opacity-80">
+                    Add your key on the Models page
+                  </a>
+                </span>
+              )}
             </div>
           )}
 

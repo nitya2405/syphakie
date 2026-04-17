@@ -167,6 +167,22 @@ export async function fetchOutput(requestId: string): Promise<OutputData> {
   return apiFetch<OutputData>(`/api/v1/outputs/${requestId}`);
 }
 
+export interface StoredProviderKey {
+  provider: string;
+}
+
+export async function fetchProviderKeys(): Promise<string[]> {
+  const data = await apiFetch<{ providers: string[] }>("/api/v1/auth/provider-keys");
+  return data.providers;
+}
+
+export async function saveProviderKey(provider: string, api_key: string): Promise<void> {
+  await apiFetch("/api/v1/auth/provider-keys", {
+    method: "POST",
+    body: JSON.stringify({ provider, api_key }),
+  });
+}
+
 export async function verifyKey(): Promise<{ email: string; role: string }> {
   return apiFetch("/api/v1/me");
 }

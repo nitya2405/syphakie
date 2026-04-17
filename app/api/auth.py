@@ -7,7 +7,7 @@ from app.services.provider_keys import ProviderKeyService
 
 router = APIRouter()
 
-SUPPORTED_PROVIDERS = {"fal", "stability"}
+SUPPORTED_PROVIDERS = {"fal", "anthropic"}
 
 
 class ProviderKeyRequest(BaseModel):
