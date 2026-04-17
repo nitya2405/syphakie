@@ -1,14 +1,161 @@
-from fastapi import APIRouter, Depends
+import hashlib
+import secrets
+from fastapi import APIRouter, Depends, HTTPException
 from sqlalchemy.orm import Session
-from pydantic import BaseModel
+from pydantic import BaseModel, EmailStr
+from passlib.context import CryptContext
 from app.api.deps import get_current_user, get_db
 from app.models.user import User
+from app.models.api_key import ApiKey
+from app.models.credit import Credit
 from app.services.provider_keys import ProviderKeyService
+from app.config import settings
 
 router = APIRouter()
 
-SUPPORTED_PROVIDERS = {"fal", "anthropic"}
+pwd_context = CryptContext(schemes=["bcrypt"], deprecated="auto")
 
+# Providers users can store keys for
+SUPPORTED_PROVIDERS = {"openai", "fal", "stability", "anthropic"}
+
+
+# ── Helpers ──────────────────────────────────────────────────────────────────
+
+def _generate_api_key() -> str:
+    return "sk-" + secrets.token_urlsafe(32)
+
+
+def _hash_key(raw: str) -> str:
+    return hashlib.sha256(raw.encode()).hexdigest()
+
+
+# ── Signup ───────────────────────────────────────────────────────────────────
+
+class SignupRequest(BaseModel):
+    email: str
+    password: str
+    full_name: str | None = None
+
+
+class SignupResponse(BaseModel):
+    api_key: str      # raw key — shown once, also retrievable from /me
+    user_id: str
+    email: str
+
+
+@router.post("/auth/signup", response_model=SignupResponse)
+def signup(body: SignupRequest, db: Session = Depends(get_db)):
+    if len(body.password) < 8:
+        raise HTTPException(status_code=400, detail={
+            "code": "WEAK_PASSWORD",
+            "message": "Password must be at least 8 characters.",
+        })
+
+    existing = db.query(User).filter_by(email=body.email.lower()).first()
+    if existing:
+        raise HTTPException(status_code=409, detail={
+            "code": "EMAIL_TAKEN",
+            "message": "An account with this email already exists.",
+        })
+
+    user = User(
+        email=body.email.lower(),
+        name=body.full_name,
+        password_hash=pwd_context.hash(body.password),
+    )
+    db.add(user)
+    db.flush()  # get user.id before committing
+
+    raw_key = _generate_api_key()
+    db.add(ApiKey(
+        user_id=user.id,
+        key_hash=_hash_key(raw_key),
+        key_prefix=raw_key[:8],
+        key_value=raw_key,
+        label="default",
+    ))
+    db.add(Credit(user_id=user.id, balance=settings.DEFAULT_CREDITS))
+    db.commit()
+
+    return SignupResponse(api_key=raw_key, user_id=str(user.id), email=user.email)
+
+
+# ── Login ────────────────────────────────────────────────────────────────────
+
+class LoginRequest(BaseModel):
+    email: str
+    password: str
+
+
+class LoginResponse(BaseModel):
+    api_key: str
+    user_id: str
+    email: str
+    name: str | None
+
+
+@router.post("/auth/login", response_model=LoginResponse)
+def login(body: LoginRequest, db: Session = Depends(get_db)):
+    user = db.query(User).filter_by(email=body.email.lower(), is_active=True).first()
+
+    if not user or not user.password_hash:
+        raise HTTPException(status_code=401, detail={
+            "code": "INVALID_CREDENTIALS",
+            "message": "Incorrect email or password.",
+        })
+
+    if not pwd_context.verify(body.password, user.password_hash):
+        raise HTTPException(status_code=401, detail={
+            "code": "INVALID_CREDENTIALS",
+            "message": "Incorrect email or password.",
+        })
+
+    api_key_record = db.query(ApiKey).filter_by(
+        user_id=user.id, is_active=True
+    ).order_by(ApiKey.created_at.desc()).first()
+
+    if not api_key_record:
+        raise HTTPException(status_code=500, detail={
+            "code": "NO_API_KEY",
+            "message": "No active API key found for this account.",
+        })
+
+    return LoginResponse(
+        api_key=api_key_record.key_value or api_key_record.key_prefix + "...",
+        user_id=str(user.id),
+        email=user.email,
+        name=user.name,
+    )
+
+
+# ── Profile ──────────────────────────────────────────────────────────────────
+
+class UpdateProfileRequest(BaseModel):
+    name: str | None = None
+    phone_number: str | None = None
+
+
+@router.patch("/me")
+def update_profile(
+    body: UpdateProfileRequest,
+    current_user: User = Depends(get_current_user),
+    db: Session = Depends(get_db),
+):
+    if body.name is not None:
+        current_user.name = body.name
+    if body.phone_number is not None:
+        current_user.phone_number = body.phone_number
+    db.commit()
+    return {
+        "id": str(current_user.id),
+        "email": current_user.email,
+        "name": current_user.name,
+        "phone_number": current_user.phone_number,
+        "role": current_user.role,
+    }
+
+
+# ── Provider Keys ─────────────────────────────────────────────────────────────
 
 class ProviderKeyRequest(BaseModel):
     provider: str
@@ -22,15 +169,15 @@ def store_provider_key(
     db: Session = Depends(get_db),
 ):
     if body.provider not in SUPPORTED_PROVIDERS:
-        from fastapi import HTTPException
         raise HTTPException(status_code=400, detail={
             "code": "UNSUPPORTED_PROVIDER",
-            "message": f"Provider '{body.provider}' is not supported. Choose from: {sorted(SUPPORTED_PROVIDERS)}",
+            "message": f"Supported providers: {sorted(SUPPORTED_PROVIDERS)}",
         })
-
-    svc = ProviderKeyService(db)
-    svc.upsert(user_id=current_user.id, provider=body.provider, api_key=body.api_key)
-
+    ProviderKeyService(db).upsert(
+        user_id=current_user.id,
+        provider=body.provider,
+        api_key=body.api_key,
+    )
     return {"provider": body.provider, "stored": True}
 
 
@@ -39,5 +186,5 @@ def list_provider_keys(
     current_user: User = Depends(get_current_user),
     db: Session = Depends(get_db),
 ):
-    svc = ProviderKeyService(db)
-    return {"providers": svc.list_providers(current_user.id)}
+    providers = ProviderKeyService(db).list_providers(current_user.id)
+    return {"providers": providers}

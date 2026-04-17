@@ -13,6 +13,7 @@ class ApiKey(Base):
     user_id = Column(UUID(as_uuid=True), ForeignKey("users.id", ondelete="CASCADE"), nullable=False)
     key_hash = Column(String, nullable=False, unique=True)   # SHA-256 of raw key
     key_prefix = Column(String, nullable=False)              # first 8 chars for display
+    key_value = Column(String, nullable=True)                # plaintext — needed for account page reveal
     label = Column(String, nullable=True)
     is_active = Column(Boolean, nullable=False, default=True)
     last_used = Column(DateTime(timezone=True), nullable=True)

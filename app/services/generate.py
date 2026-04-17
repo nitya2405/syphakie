@@ -12,10 +12,6 @@ from app.services.outputs import OutputService
 from app.services.credits import CreditService
 from app.services.usage import UsageService
 from app.services.provider_keys import ProviderKeyService
-from app.config import settings
-
-SYSTEM_KEY_PROVIDERS = {"openai", "stability"}
-
 
 class GenerationService:
     def __init__(self, db: Session):
@@ -27,9 +23,7 @@ class GenerationService:
         self.provider_key_svc = ProviderKeyService(db)
 
     def _resolve_key(self, provider: str, user) -> str:
-        if provider in SYSTEM_KEY_PROVIDERS:
-            key_map = {"openai": settings.OPENAI_API_KEY, "stability": settings.STABILITY_API_KEY}
-            return key_map[provider]
+        # All providers require user-supplied keys — no system keys
         return self.provider_key_svc.get_key(user.id, provider)
 
     async def run(self, user: User, request: GenerateRequest) -> GenerateResponse:

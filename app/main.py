@@ -2,7 +2,7 @@ from fastapi import FastAPI, Depends
 from fastapi.staticfiles import StaticFiles
 from fastapi.middleware.cors import CORSMiddleware
 from app.config import settings
-from app.api.deps import get_current_user
+from app.api.deps import get_current_user, get_db
 from app.api import generate, outputs, credits, models, usage, auth, admin
 from app.models.user import User
 import os
@@ -32,11 +32,19 @@ def create_app() -> FastAPI:
         return {"status": "ok", "version": "0.1.0"}
 
     @app.get("/api/v1/me")
-    def me(current_user: User = Depends(get_current_user)):
+    def me(current_user: User = Depends(get_current_user), db=Depends(get_db)):
+        from app.models.api_key import ApiKey
+        key_record = db.query(ApiKey).filter_by(
+            user_id=current_user.id, is_active=True
+        ).order_by(ApiKey.created_at.desc()).first()
         return {
             "id": str(current_user.id),
             "email": current_user.email,
+            "name": current_user.name,
+            "phone_number": current_user.phone_number,
             "role": current_user.role,
+            "api_key": key_record.key_value if key_record else None,
+            "api_key_prefix": key_record.key_prefix if key_record else None,
         }
 
     app.include_router(generate.router, prefix="/api/v1", tags=["Generate"])

@@ -12,6 +12,8 @@ class User(Base):
     id = Column(UUID(as_uuid=True), primary_key=True, default=uuid.uuid4)
     email = Column(String, nullable=False, unique=True)
     name = Column(String, nullable=True)
+    phone_number = Column(String, nullable=True)
+    password_hash = Column(String, nullable=True)   # bcrypt; nullable for API-key-only accounts
     role = Column(String, nullable=False, default="user")  # "user" | "admin"
     is_active = Column(Boolean, nullable=False, default=True)
     created_at = Column(DateTime(timezone=True), server_default=func.now(), nullable=False)

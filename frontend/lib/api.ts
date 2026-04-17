@@ -183,6 +183,51 @@ export async function saveProviderKey(provider: string, api_key: string): Promis
   });
 }
 
+export interface UserProfile {
+  id: string;
+  email: string;
+  name: string | null;
+  phone_number: string | null;
+  role: string;
+  api_key: string | null;
+  api_key_prefix: string | null;
+}
+
+export async function signup(body: {
+  email: string;
+  password: string;
+  full_name?: string;
+}): Promise<{ api_key: string; user_id: string; email: string }> {
+  return apiFetch("/api/v1/auth/signup", {
+    method: "POST",
+    body: JSON.stringify(body),
+  });
+}
+
+export async function loginWithPassword(body: {
+  email: string;
+  password: string;
+}): Promise<{ api_key: string; user_id: string; email: string; name: string | null }> {
+  return apiFetch("/api/v1/auth/login", {
+    method: "POST",
+    body: JSON.stringify(body),
+  });
+}
+
+export async function fetchMe(): Promise<UserProfile> {
+  return apiFetch<UserProfile>("/api/v1/me");
+}
+
+export async function updateProfile(body: {
+  name?: string;
+  phone_number?: string;
+}): Promise<UserProfile> {
+  return apiFetch<UserProfile>("/api/v1/me", {
+    method: "PATCH",
+    body: JSON.stringify(body),
+  });
+}
+
 export async function verifyKey(): Promise<{ email: string; role: string }> {
   return apiFetch("/api/v1/me");
 }

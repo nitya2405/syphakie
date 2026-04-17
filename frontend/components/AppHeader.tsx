@@ -19,6 +19,7 @@ export default function AppHeader({ balance }: Props) {
   const navLinks = [
     { href: "/generate", label: "Generate" },
     { href: "/models", label: "Models" },
+    { href: "/account", label: "Account" },
   ];
 
   return (

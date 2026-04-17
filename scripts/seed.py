@@ -12,51 +12,56 @@ from app.db.session import SessionLocal
 from app.models.model_registry import ModelRegistry
 
 MODELS = [
-    # ── OpenAI — Text ───────────────────────────────────────────────────────
+    # ── OpenAI — Text (user key required) ──────────────────────────────────
     dict(
         provider="openai", model_id="gpt-4o", modality="text",
         display_name="GPT-4o", cost_per_unit=0.005,
         unit_type="token", avg_latency_ms=900, quality_score=0.95,
+        requires_user_key=True,
     ),
     dict(
         provider="openai", model_id="gpt-4o-mini", modality="text",
         display_name="GPT-4o Mini", cost_per_unit=0.00015,
         unit_type="token", avg_latency_ms=500, quality_score=0.80,
+        requires_user_key=True,
     ),
     dict(
         provider="openai", model_id="gpt-3.5-turbo", modality="text",
         display_name="GPT-3.5 Turbo", cost_per_unit=0.001,
         unit_type="token", avg_latency_ms=400, quality_score=0.75,
+        requires_user_key=True,
     ),
-    # ── OpenAI — Image ──────────────────────────────────────────────────────
+    # ── OpenAI — Image (user key required) ─────────────────────────────────
     dict(
         provider="openai", model_id="dall-e-3", modality="image",
         display_name="DALL-E 3", cost_per_unit=40,
         unit_type="image", avg_latency_ms=5000, quality_score=0.92,
+        requires_user_key=True,
     ),
     dict(
         provider="openai", model_id="dall-e-2", modality="image",
         display_name="DALL-E 2", cost_per_unit=15,
         unit_type="image", avg_latency_ms=3000, quality_score=0.70,
+        requires_user_key=True,
     ),
-    # ── Stability AI — Image (system key) ───────────────────────────────────
+    # ── Stability AI — Image (user key required) ────────────────────────────
     dict(
         provider="stability", model_id="stability-ai/stable-image-core", modality="image",
         display_name="Stable Image Core", cost_per_unit=3,
         unit_type="image", avg_latency_ms=6000, quality_score=0.85,
-        requires_user_key=False,
+        requires_user_key=True,
     ),
     dict(
         provider="stability", model_id="stability-ai/stable-image-ultra", modality="image",
         display_name="Stable Image Ultra", cost_per_unit=8,
         unit_type="image", avg_latency_ms=9000, quality_score=0.91,
-        requires_user_key=False,
+        requires_user_key=True,
     ),
     dict(
         provider="stability", model_id="stability-ai/sd3-medium", modality="image",
         display_name="Stable Diffusion 3 Medium", cost_per_unit=4,
         unit_type="image", avg_latency_ms=7000, quality_score=0.87,
-        requires_user_key=False,
+        requires_user_key=True,
     ),
     # ── Fal.ai — Image (user key required) ─────────────────────────────────
     dict(
