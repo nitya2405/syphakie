@@ -1,5 +1,6 @@
 from fastapi import FastAPI, Depends
 from fastapi.staticfiles import StaticFiles
+from fastapi.middleware.cors import CORSMiddleware
 from app.config import settings
 from app.api.deps import get_current_user
 from app.api import generate, outputs, credits, models, usage, auth, admin
@@ -13,6 +14,14 @@ def create_app() -> FastAPI:
         version="0.1.0",
         docs_url="/docs",
         redoc_url=None,
+    )
+
+    app.add_middleware(
+        CORSMiddleware,
+        allow_origins=["http://localhost:3000"],
+        allow_credentials=True,
+        allow_methods=["*"],
+        allow_headers=["*"],
     )
 
     os.makedirs(settings.OUTPUT_DIR, exist_ok=True)
