@@ -418,9 +418,18 @@ export default function ModelsPage() {
     }
   }
 
+  // Derive task_type from modality when server returns null (pre-migration server)
+  const _MODALITY_TASK: Record<string, string> = {
+    text: "chat", image: "text_to_image",
+    video: "text_to_video", audio: "text_to_speech",
+  };
+  function effectiveTaskType(m: ModelFull): string {
+    return m.task_type ?? _MODALITY_TASK[m.modality] ?? "";
+  }
+
   // Filtering
   const visible = models.filter((m) => {
-    if (selectedTasks.size > 0 && !selectedTasks.has(m.task_type ?? "")) return false;
+    if (selectedTasks.size > 0 && !selectedTasks.has(effectiveTaskType(m))) return false;
     if (selectedProviders.size > 0 && !selectedProviders.has(m.provider)) return false;
     if (search.trim()) {
       const q = search.toLowerCase();
@@ -561,11 +570,14 @@ export default function ModelsPage() {
                             <td className="px-4 py-3 text-gray-600 text-xs">{providerLabel(m.provider)}</td>
                             <td className="px-4 py-3">
                               <div className="flex flex-wrap items-center gap-1">
-                                {m.task_type && (
-                                  <span className={`text-xs font-medium px-1.5 py-0.5 rounded ${TASK_COLORS[m.task_type] ?? "bg-gray-100 text-gray-600"}`}>
-                                    {taskLabel(m.task_type)}
-                                  </span>
-                                )}
+                                {(() => {
+                                  const tt = effectiveTaskType(m);
+                                  return tt ? (
+                                    <span className={`text-xs font-medium px-1.5 py-0.5 rounded ${TASK_COLORS[tt] ?? "bg-gray-100 text-gray-600"}`}>
+                                      {taskLabel(tt)}
+                                    </span>
+                                  ) : null;
+                                })()}
                                 {m.requires_user_key && (
                                   <span className={`text-xs px-1.5 py-0.5 rounded font-medium ${keySet ? "bg-green-100 text-green-700" : "bg-amber-100 text-amber-700"}`}>
                                     {keySet ? "key ✓" : "your key"}
