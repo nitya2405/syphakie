@@ -1,7 +1,8 @@
 "use client";
-import { useState, useEffect, useCallback, useRef } from "react";
-import { useRouter } from "next/navigation";
+import { useState, useEffect, useCallback, useRef, Suspense } from "react";
+import { useRouter, useSearchParams } from "next/navigation";
 import { getApiKey, clearApiKey } from "@/lib/auth";
+import AppHeader from "@/components/AppHeader";
 import {
   fetchModels,
   generate,
@@ -28,48 +29,40 @@ function timeAgo(iso: string): string {
   return `${Math.floor(hrs / 24)}d ago`;
 }
 
-function Spinner() {
+function Spinner({ className = "h-4 w-4 text-white" }: { className?: string }) {
   return (
-    <svg
-      className="animate-spin h-4 w-4 text-white"
-      fill="none"
-      viewBox="0 0 24 24"
-    >
-      <circle
-        className="opacity-25"
-        cx="12"
-        cy="12"
-        r="10"
-        stroke="currentColor"
-        strokeWidth="4"
-      />
-      <path
-        className="opacity-75"
-        fill="currentColor"
-        d="M4 12a8 8 0 018-8v8H4z"
-      />
+    <svg className={`animate-spin ${className}`} fill="none" viewBox="0 0 24 24">
+      <circle className="opacity-25" cx="12" cy="12" r="10" stroke="currentColor" strokeWidth="4" />
+      <path className="opacity-75" fill="currentColor" d="M4 12a8 8 0 018-8v8H4z" />
     </svg>
   );
 }
 
-export default function GeneratePage() {
+function GenerateContent() {
   const router = useRouter();
+  const searchParams = useSearchParams();
 
-  // Form state
-  const [modality, setModality] = useState<Modality>("text");
-  const [mode, setMode] = useState<Mode>("auto");
+  // Read URL params set by "Use Model" on /models page
+  const urlModel    = searchParams.get("model");
+  const urlModality = searchParams.get("modality") as Modality | null;
+  const urlMode     = searchParams.get("mode") as Mode | null;
+
+  const [modality, setModality] = useState<Modality>(
+    urlModality === "image" ? "image" : "text",
+  );
+  const [mode, setMode] = useState<Mode>(
+    urlMode === "manual" ? "manual" : "auto",
+  );
   const [prompt, setPrompt] = useState("");
   const [selectedModel, setSelectedModel] = useState("");
   const [models, setModels] = useState<ModelOption[]>([]);
 
-  // UI state
   const [balance, setBalance] = useState<number | null>(null);
   const [loading, setLoading] = useState(false);
   const [result, setResult] = useState<GenerateResponse | null>(null);
   const [error, setError] = useState("");
   const [copySuccess, setCopySuccess] = useState(false);
 
-  // History state
   const [history, setHistory] = useState<HistoryRecord[]>([]);
   const [expandedId, setExpandedId] = useState<string | null>(null);
   const [expandedOutputs, setExpandedOutputs] = useState<
@@ -78,25 +71,16 @@ export default function GeneratePage() {
 
   const copyTimer = useRef<ReturnType<typeof setTimeout> | null>(null);
 
-  // Redirect if no key
   useEffect(() => {
     if (!getApiKey()) router.replace("/login");
   }, [router]);
 
   const loadBalance = useCallback(async () => {
-    try {
-      setBalance(await fetchBalance());
-    } catch {
-      // non-critical
-    }
+    try { setBalance(await fetchBalance()); } catch { /* non-critical */ }
   }, []);
 
   const loadHistory = useCallback(async () => {
-    try {
-      setHistory(await fetchHistory(10));
-    } catch {
-      // non-critical
-    }
+    try { setHistory(await fetchHistory(10)); } catch { /* non-critical */ }
   }, []);
 
   useEffect(() => {
@@ -104,15 +88,17 @@ export default function GeneratePage() {
     loadHistory();
   }, [loadBalance, loadHistory]);
 
-  // Refresh models when modality changes in manual mode
+  // Load models for manual mode; honour URL-preselected model
   useEffect(() => {
     if (mode !== "manual") return;
     fetchModels(modality)
       .then((list) => {
         setModels(list);
-        setSelectedModel(list[0]?.model_id ?? "");
+        const preselect = urlModel && list.find((m) => m.model_id === urlModel);
+        setSelectedModel(preselect ? preselect.model_id : list[0]?.model_id ?? "");
       })
       .catch(() => setModels([]));
+  // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [modality, mode]);
 
   function handleModeChange(m: Mode) {
@@ -126,7 +112,6 @@ export default function GeneratePage() {
     setLoading(true);
     setError("");
     setResult(null);
-
     try {
       const res = await generate({
         modality,
@@ -139,11 +124,7 @@ export default function GeneratePage() {
       loadHistory();
     } catch (err) {
       if (err instanceof ApiError) {
-        if (err.status === 401) {
-          clearApiKey();
-          router.replace("/login");
-          return;
-        }
+        if (err.status === 401) { clearApiKey(); router.replace("/login"); return; }
         setError(err.message);
       } else {
         setError("Generation failed. Is the backend running?");
@@ -159,9 +140,7 @@ export default function GeneratePage() {
       setCopySuccess(true);
       if (copyTimer.current) clearTimeout(copyTimer.current);
       copyTimer.current = setTimeout(() => setCopySuccess(false), 2000);
-    } catch {
-      // clipboard blocked
-    }
+    } catch { /* blocked */ }
   }
 
   function handleDownload(url: string) {
@@ -178,14 +157,9 @@ export default function GeneratePage() {
   }
 
   async function toggleHistory(id: string) {
-    if (expandedId === id) {
-      setExpandedId(null);
-      return;
-    }
+    if (expandedId === id) { setExpandedId(null); return; }
     setExpandedId(id);
-
-    if (expandedOutputs[id]) return; // already fetched
-
+    if (expandedOutputs[id]) return;
     setExpandedOutputs((prev) => ({ ...prev, [id]: "loading" }));
     try {
       const out = await fetchOutput(id);
@@ -197,39 +171,17 @@ export default function GeneratePage() {
 
   return (
     <div className="min-h-screen flex flex-col">
-      {/* Header */}
-      <header className="border-b border-gray-200 bg-white px-4 py-3 flex items-center justify-between sticky top-0 z-10">
-        <span className="font-semibold text-sm">SyphaKie</span>
-        <div className="flex items-center gap-4 text-sm text-gray-500">
-          {balance !== null && (
-            <span>
-              <span className="font-medium text-gray-900">{balance}</span>{" "}
-              credits
-            </span>
-          )}
-          <button
-            onClick={() => { clearApiKey(); router.replace("/login"); }}
-            className="text-gray-400 hover:text-gray-700 transition-colors"
-          >
-            Logout
-          </button>
-        </div>
-      </header>
+      <AppHeader balance={balance} />
 
       <main className="flex-1 flex flex-col items-center px-4 py-10">
         <div className="w-full max-w-2xl space-y-8">
           <h1 className="text-xl font-semibold">Generate</h1>
 
-          {/* ── Form ─────────────────────────────────────────────────── */}
-          <form
-            onSubmit={(e) => { e.preventDefault(); runGenerate(); }}
-            className="space-y-4"
-          >
+          {/* ── Form ─────────────────────────────────────────────── */}
+          <form onSubmit={(e) => { e.preventDefault(); runGenerate(); }} className="space-y-4">
             <div className="grid grid-cols-2 gap-3">
               <div>
-                <label className="block text-xs font-medium text-gray-600 mb-1">
-                  Modality
-                </label>
+                <label className="block text-xs font-medium text-gray-600 mb-1">Modality</label>
                 <select
                   value={modality}
                   onChange={(e) => setModality(e.target.value as Modality)}
@@ -240,9 +192,7 @@ export default function GeneratePage() {
                 </select>
               </div>
               <div>
-                <label className="block text-xs font-medium text-gray-600 mb-1">
-                  Mode
-                </label>
+                <label className="block text-xs font-medium text-gray-600 mb-1">Mode</label>
                 <select
                   value={mode}
                   onChange={(e) => handleModeChange(e.target.value as Mode)}
@@ -256,9 +206,7 @@ export default function GeneratePage() {
 
             {mode === "manual" && (
               <div>
-                <label className="block text-xs font-medium text-gray-600 mb-1">
-                  Model
-                </label>
+                <label className="block text-xs font-medium text-gray-600 mb-1">Model</label>
                 {models.length === 0 ? (
                   <p className="text-sm text-gray-400 py-2">Loading models…</p>
                 ) : (
@@ -279,9 +227,7 @@ export default function GeneratePage() {
             )}
 
             <div>
-              <label className="block text-xs font-medium text-gray-600 mb-1">
-                Prompt
-              </label>
+              <label className="block text-xs font-medium text-gray-600 mb-1">Prompt</label>
               <textarea
                 value={prompt}
                 onChange={(e) => setPrompt(e.target.value)}
@@ -305,14 +251,14 @@ export default function GeneratePage() {
             </button>
           </form>
 
-          {/* ── Error ────────────────────────────────────────────────── */}
+          {/* ── Error ────────────────────────────────────────────── */}
           {error && (
             <div className="rounded-md border border-red-200 bg-red-50 px-4 py-3 text-sm text-red-700">
               {error}
             </div>
           )}
 
-          {/* ── Result ───────────────────────────────────────────────── */}
+          {/* ── Result ───────────────────────────────────────────── */}
           {result && (
             <div className="border border-gray-200 rounded-md overflow-hidden">
               <div className="p-4 bg-white">
@@ -323,15 +269,10 @@ export default function GeneratePage() {
                 )}
                 {result.modality === "image" && result.output.url && (
                   // eslint-disable-next-line @next/next/no-img-element
-                  <img
-                    src={result.output.url}
-                    alt="Generated image"
-                    className="max-w-full rounded"
-                  />
+                  <img src={result.output.url} alt="Generated image" className="max-w-full rounded" />
                 )}
               </div>
 
-              {/* Action buttons */}
               <div className="border-t border-gray-100 px-4 py-2 flex items-center gap-2">
                 {result.modality === "text" && result.output.content && (
                   <button
@@ -358,102 +299,48 @@ export default function GeneratePage() {
                 </button>
               </div>
 
-              {/* Meta bar */}
               <div className="border-t border-gray-100 bg-gray-50 px-4 py-2 flex flex-wrap gap-x-5 gap-y-1 text-xs text-gray-500">
-                <span>
-                  <span className="font-medium text-gray-700">
-                    {result.meta.credits_used}
-                  </span>{" "}
-                  credits
-                </span>
-                <span>
-                  <span className="font-medium text-gray-700">
-                    {result.meta.latency_ms}ms
-                  </span>
-                </span>
-                <span>
-                  {result.provider} / {result.model}
-                </span>
+                <span><span className="font-medium text-gray-700">{result.meta.credits_used}</span> credits</span>
+                <span><span className="font-medium text-gray-700">{result.meta.latency_ms}ms</span></span>
+                <span>{result.provider} / {result.model}</span>
                 <span className="capitalize">{result.meta.routing_mode}</span>
               </div>
             </div>
           )}
 
-          {/* ── Recent History ────────────────────────────────────────── */}
+          {/* ── Recent History ────────────────────────────────────── */}
           {history.length > 0 && (
             <div className="space-y-2">
               <h2 className="text-sm font-medium text-gray-700">Recent</h2>
               <div className="border border-gray-200 rounded-md divide-y divide-gray-100 overflow-hidden">
                 {history.map((item) => (
                   <div key={item.request_id}>
-                    {/* Row */}
                     <button
-                      onClick={() =>
-                        item.status === "success"
-                          ? toggleHistory(item.request_id)
-                          : undefined
-                      }
-                      className={`w-full text-left px-4 py-3 flex items-center gap-3 text-sm hover:bg-gray-50 transition-colors ${
-                        item.status !== "success"
-                          ? "cursor-default opacity-60"
-                          : ""
-                      }`}
+                      onClick={() => item.status === "success" ? toggleHistory(item.request_id) : undefined}
+                      className={`w-full text-left px-4 py-3 flex items-center gap-3 text-sm hover:bg-gray-50 transition-colors ${item.status !== "success" ? "cursor-default opacity-60" : ""}`}
                     >
-                      {/* Modality badge */}
-                      <span
-                        className={`shrink-0 text-xs font-medium px-1.5 py-0.5 rounded ${
-                          item.modality === "image"
-                            ? "bg-purple-100 text-purple-700"
-                            : "bg-blue-100 text-blue-700"
-                        }`}
-                      >
+                      <span className={`shrink-0 text-xs font-medium px-1.5 py-0.5 rounded ${item.modality === "image" ? "bg-purple-100 text-purple-700" : "bg-blue-100 text-blue-700"}`}>
                         {item.modality}
                       </span>
-
-                      {/* Prompt */}
                       <span className="flex-1 text-gray-700 truncate min-w-0">
                         {item.prompt ?? "(no prompt)"}
                       </span>
-
-                      {/* Right side meta */}
-                      <span className="shrink-0 text-gray-400 text-xs hidden sm:block">
-                        {item.model ?? "—"}
-                      </span>
-                      <span className="shrink-0 text-gray-400 text-xs">
-                        {item.credits_deducted}cr
-                      </span>
-                      <span className="shrink-0 text-gray-400 text-xs">
-                        {timeAgo(item.created_at)}
-                      </span>
-
-                      {/* Expand chevron */}
+                      <span className="shrink-0 text-gray-400 text-xs hidden sm:block">{item.model ?? "—"}</span>
+                      <span className="shrink-0 text-gray-400 text-xs">{item.credits_deducted}cr</span>
+                      <span className="shrink-0 text-gray-400 text-xs">{timeAgo(item.created_at)}</span>
                       {item.status === "success" && (
                         <svg
-                          className={`shrink-0 w-3.5 h-3.5 text-gray-400 transition-transform ${
-                            expandedId === item.request_id ? "rotate-180" : ""
-                          }`}
-                          fill="none"
-                          stroke="currentColor"
-                          viewBox="0 0 24 24"
+                          className={`shrink-0 w-3.5 h-3.5 text-gray-400 transition-transform ${expandedId === item.request_id ? "rotate-180" : ""}`}
+                          fill="none" stroke="currentColor" viewBox="0 0 24 24"
                         >
-                          <path
-                            strokeLinecap="round"
-                            strokeLinejoin="round"
-                            strokeWidth={2}
-                            d="M19 9l-7 7-7-7"
-                          />
+                          <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M19 9l-7 7-7-7" />
                         </svg>
                       )}
-
-                      {/* Failed badge */}
                       {item.status === "failed" && (
-                        <span className="shrink-0 text-xs text-red-500">
-                          failed
-                        </span>
+                        <span className="shrink-0 text-xs text-red-500">failed</span>
                       )}
                     </button>
 
-                    {/* Expanded output */}
                     {expandedId === item.request_id && (
                       <div className="border-t border-gray-100 bg-gray-50 px-4 py-3">
                         {(() => {
@@ -461,35 +348,13 @@ export default function GeneratePage() {
                           if (!out || out === "loading") {
                             return (
                               <div className="flex items-center gap-2 text-sm text-gray-400">
-                                <svg
-                                  className="animate-spin h-3.5 w-3.5"
-                                  fill="none"
-                                  viewBox="0 0 24 24"
-                                >
-                                  <circle
-                                    className="opacity-25"
-                                    cx="12"
-                                    cy="12"
-                                    r="10"
-                                    stroke="currentColor"
-                                    strokeWidth="4"
-                                  />
-                                  <path
-                                    className="opacity-75"
-                                    fill="currentColor"
-                                    d="M4 12a8 8 0 018-8v8H4z"
-                                  />
-                                </svg>
+                                <Spinner className="h-3.5 w-3.5 text-gray-400" />
                                 Loading…
                               </div>
                             );
                           }
                           if (out === "error") {
-                            return (
-                              <p className="text-sm text-gray-400">
-                                Output no longer available.
-                              </p>
-                            );
+                            return <p className="text-sm text-gray-400">Output no longer available.</p>;
                           }
                           return (
                             <div>
@@ -500,11 +365,7 @@ export default function GeneratePage() {
                               )}
                               {out.modality === "image" && out.output.url && (
                                 // eslint-disable-next-line @next/next/no-img-element
-                                <img
-                                  src={out.output.url}
-                                  alt="Generated image"
-                                  className="max-w-full rounded"
-                                />
+                                <img src={out.output.url} alt="Generated image" className="max-w-full rounded" />
                               )}
                             </div>
                           );
@@ -519,5 +380,13 @@ export default function GeneratePage() {
         </div>
       </main>
     </div>
+  );
+}
+
+export default function GeneratePage() {
+  return (
+    <Suspense fallback={null}>
+      <GenerateContent />
+    </Suspense>
   );
 }

@@ -72,12 +72,48 @@ export interface GenerateResponse {
   };
 }
 
+export interface ModelFull extends ModelOption {
+  is_active: boolean;
+  avg_latency_ms: number | null;
+  quality_score: number | null;
+}
+
+export interface UsageSummary {
+  total_requests: number;
+  total_credits_used: number;
+  by_modality: Record<string, number>;
+  by_provider: Record<string, number>;
+}
+
+export interface UsageDay {
+  date: string;
+  requests: number;
+  credits: number;
+}
+
 export async function fetchModels(modality?: string): Promise<ModelOption[]> {
   const qs = modality ? `?modality=${modality}` : "";
   const data = await apiFetch<{ models: ModelOption[] }>(
     `/api/v1/models/list${qs}`,
   );
   return data.models;
+}
+
+export async function fetchAllModels(modality?: string): Promise<ModelFull[]> {
+  const qs = modality ? `?modality=${modality}` : "";
+  const data = await apiFetch<{ models: ModelFull[] }>(`/api/v1/models${qs}`);
+  return data.models;
+}
+
+export async function fetchUsageSummary(): Promise<UsageSummary> {
+  return apiFetch<UsageSummary>("/api/v1/usage/summary");
+}
+
+export async function fetchUsageDaily(days = 30): Promise<UsageDay[]> {
+  const data = await apiFetch<{ days: UsageDay[] }>(
+    `/api/v1/usage/daily?days=${days}`,
+  );
+  return data.days;
 }
 
 export async function generate(body: {

@@ -1,12 +1,84 @@
 from fastapi import APIRouter, Depends, Query
 from sqlalchemy.orm import Session
-from sqlalchemy import desc
-from datetime import datetime
+from sqlalchemy import desc, func
+from datetime import datetime, timedelta
 from app.api.deps import get_current_user, get_db
 from app.models.request_record import RequestRecord
 from app.models.user import User
 
 router = APIRouter()
+
+
+@router.get("/usage/summary")
+def get_usage_summary(
+    current_user: User = Depends(get_current_user),
+    db: Session = Depends(get_db),
+):
+    base = db.query(RequestRecord).filter(
+        RequestRecord.user_id == current_user.id,
+        RequestRecord.status == "success",
+    )
+
+    total = base.count()
+    credits_used = base.with_entities(
+        func.coalesce(func.sum(RequestRecord.credits_deducted), 0)
+    ).scalar()
+
+    by_modality = {
+        row[0]: row[1]
+        for row in base.with_entities(
+            RequestRecord.modality, func.count(RequestRecord.id)
+        ).group_by(RequestRecord.modality).all()
+    }
+    by_provider = {
+        row[0]: row[1]
+        for row in base.with_entities(
+            RequestRecord.provider, func.count(RequestRecord.id)
+        ).filter(RequestRecord.provider.isnot(None))
+        .group_by(RequestRecord.provider).all()
+    }
+
+    return {
+        "total_requests": total,
+        "total_credits_used": int(credits_used),
+        "by_modality": by_modality,
+        "by_provider": by_provider,
+    }
+
+
+@router.get("/usage/daily")
+def get_usage_daily(
+    days: int = Query(default=30, ge=1, le=90),
+    current_user: User = Depends(get_current_user),
+    db: Session = Depends(get_db),
+):
+    since = datetime.utcnow() - timedelta(days=days)
+    rows = (
+        db.query(
+            func.date_trunc("day", RequestRecord.created_at).label("day"),
+            func.count(RequestRecord.id).label("requests"),
+            func.coalesce(func.sum(RequestRecord.credits_deducted), 0).label("credits"),
+        )
+        .filter(
+            RequestRecord.user_id == current_user.id,
+            RequestRecord.status == "success",
+            RequestRecord.created_at >= since,
+        )
+        .group_by(func.date_trunc("day", RequestRecord.created_at))
+        .order_by("day")
+        .all()
+    )
+
+    return {
+        "days": [
+            {
+                "date": row.day.strftime("%Y-%m-%d"),
+                "requests": row.requests,
+                "credits": int(row.credits),
+            }
+            for row in rows
+        ]
+    }
 
 
 @router.get("/usage")
