@@ -289,6 +289,75 @@ function ProviderKeyRow({ keyProvider, displayLabel, hasKey, onSaved }: Provider
   );
 }
 
+// ── Provider Keys Dropdown ────────────────────────────────────────────────────
+
+interface ProviderKeysDropdownProps {
+  keyProvidersNeeded: string[];
+  keyProviderLabel: Record<string, string>;
+  storedKeys: string[];
+  onSaved: () => void;
+}
+
+function ProviderKeysDropdown({
+  keyProvidersNeeded, keyProviderLabel, storedKeys, onSaved,
+}: ProviderKeysDropdownProps) {
+  const [open, setOpen] = useState(false);
+  const allSet = keyProvidersNeeded.every((kp) => storedKeys.includes(kp));
+  const setCount = keyProvidersNeeded.filter((kp) => storedKeys.includes(kp)).length;
+
+  return (
+    <div className="border border-gray-200 rounded-md overflow-hidden">
+      {/* Header — click to toggle */}
+      <button
+        onClick={() => setOpen((v) => !v)}
+        className="w-full flex items-center justify-between px-4 py-3 bg-gray-50 hover:bg-gray-100 transition-colors text-left"
+      >
+        <div className="flex items-center gap-2.5">
+          <svg className="w-4 h-4 text-gray-500" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+            <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2}
+              d="M15 7a2 2 0 012 2m4 0a6 6 0 01-7.743 5.743L11 17H9v2H7v2H4a1 1 0 01-1-1v-2.586a1 1 0 01.293-.707l5.964-5.964A6 6 0 1121 9z" />
+          </svg>
+          <span className="text-sm font-medium text-gray-700">Provider Keys</span>
+          <span className={`text-xs px-2 py-0.5 rounded-full font-medium ${
+            allSet ? "bg-green-100 text-green-700" : "bg-amber-100 text-amber-700"
+          }`}>
+            {setCount}/{keyProvidersNeeded.length} set
+          </span>
+        </div>
+        <svg
+          className={`w-4 h-4 text-gray-400 transition-transform ${open ? "rotate-180" : ""}`}
+          fill="none" stroke="currentColor" viewBox="0 0 24 24"
+        >
+          <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M19 9l-7 7-7-7" />
+        </svg>
+      </button>
+
+      {/* Rows — only shown when open */}
+      {open && (
+        <>
+          <div className="px-4 pt-1 pb-0.5 border-t border-gray-100">
+            <p className="text-xs text-gray-400 py-1.5">
+              Stored securely on the server. Required for models marked{" "}
+              <span className="font-medium text-amber-600">your key</span>.
+            </p>
+          </div>
+          <div className="divide-y divide-gray-100 px-4 pb-1">
+            {keyProvidersNeeded.map((kp) => (
+              <ProviderKeyRow
+                key={kp}
+                keyProvider={kp}
+                displayLabel={keyProviderLabel[kp]}
+                hasKey={storedKeys.includes(kp)}
+                onSaved={onSaved}
+              />
+            ))}
+          </div>
+        </>
+      )}
+    </div>
+  );
+}
+
 // ── Page ──────────────────────────────────────────────────────────────────────
 
 export default function ModelsPage() {
@@ -416,27 +485,14 @@ export default function ModelsPage() {
             {/* ── Main Content ──────────────────────────────────────── */}
             <div className="flex-1 min-w-0 space-y-5">
 
-              {/* Provider Keys */}
+              {/* Provider Keys — collapsible dropdown */}
               {!loading && keyProvidersNeeded.length > 0 && (
-                <div className="border border-gray-200 rounded-md overflow-hidden">
-                  <div className="bg-gray-50 px-4 py-2.5 border-b border-gray-200">
-                    <h2 className="text-sm font-medium text-gray-700">Provider Keys</h2>
-                    <p className="text-xs text-gray-400 mt-0.5">
-                      Stored securely. Required to use models marked <span className="font-medium text-amber-600">your key</span>.
-                    </p>
-                  </div>
-                  <div className="divide-y divide-gray-100 px-4">
-                    {keyProvidersNeeded.map((kp) => (
-                      <ProviderKeyRow
-                        key={kp}
-                        keyProvider={kp}
-                        displayLabel={keyProviderLabel[kp]}
-                        hasKey={storedKeys.includes(kp)}
-                        onSaved={() => fetchProviderKeys().then(setStoredKeys)}
-                      />
-                    ))}
-                  </div>
-                </div>
+                <ProviderKeysDropdown
+                  keyProvidersNeeded={keyProvidersNeeded}
+                  keyProviderLabel={keyProviderLabel}
+                  storedKeys={storedKeys}
+                  onSaved={() => fetchProviderKeys().then(setStoredKeys)}
+                />
               )}
 
               {/* Header + Search */}
