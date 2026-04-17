@@ -30,142 +30,202 @@ The backend already supports both. The API is feature-complete for developers to
 - Full audit trail: request_records + usage_logs
 - Admin endpoints: model activation, cost/latency/quality overrides
 - Latency self-update script (scripts/update_latency.py)
+- `GET /credits` — balance already exists
+- `GET /outputs/{request_id}` — single output detail already exists
 
 ---
 
-## Phase 4 — Productization (UI Foundation)
+## Phase 4A — Core UI (Ship Fast)
 
-**Goal:** Ship a working web UI. Users can generate, view history, manage their account.  
-**Timeline:** 1.5–2 weeks
+**Goal:** Get something in a browser. Only the two screens that prove the product works.  
+**Timeline:** 1–2 days (hard cap — if it takes longer, scope is wrong)
 
-### Frontend
+### What to build
 
-**Stack:** Next.js 14 (App Router), Tailwind CSS, shadcn/ui, React Query
+**Only two pages:**
 
-**Pages:**
+| Route | What |
+|-------|------|
+| `/login` | API key entry, stored to localStorage |
+| `/generate` | The entire product in one screen |
 
-| Route | Purpose |
-|-------|---------|
-| `/` | Landing / login redirect |
-| `/generate` | Main generation UI |
-| `/history` | Past requests with outputs |
-| `/settings` | API key display, provider keys, credit balance |
-| `/login` | API key entry (no OAuth yet) |
-
-**`/generate` page:**
+**`/generate` must have:**
 - Modality selector (Text / Image)
 - Mode selector (Manual / Auto)
-- Model + provider dropdowns (populated from `GET /api/v1/models`)
+- Model dropdown (from `GET /api/v1/models`)
 - Prompt textarea
-- Submit → loading state → output display (text inline, image rendered)
-- Credits used shown after each response
+- Submit button → loading state → output rendered inline
+- Credit balance shown after response (from `meta.credits_remaining`)
+- Error display if generation fails
 
-**`/history` page:**
-- Table from `GET /api/v1/outputs` + `GET /api/v1/usage`
-- Filter by modality, date range
-- Click row → expand output
-
-**`/settings` page:**
+**`/settings` (minimal):**
 - Show API key (masked, copy button)
-- Credit balance from `GET /api/v1/credits/balance`
-- Provider key management (Fal, Stability)
-- Link to API docs
+- Current credit balance from `GET /api/v1/credits`
+- Nothing else
 
 ### Backend Changes
 
-- Add `GET /api/v1/credits/balance` — return `{ balance: int }` *(if not already present)*
-- Add `GET /api/v1/outputs/{request_id}` — single output detail
-- Add CORS middleware to FastAPI for `localhost:3000` and production domain
+- Add CORS middleware — required before any browser request works:
+  ```python
+  from fastapi.middleware.cors import CORSMiddleware
+  app.add_middleware(
+      CORSMiddleware,
+      allow_origins=["http://localhost:3000"],
+      allow_methods=["*"],
+      allow_headers=["*"],
+  )
+  ```
+- `GET /credits` already returns `{ balance }` — no new endpoint needed
+- `GET /outputs/{request_id}` already exists — no new endpoint needed
 
-```python
-# main.py addition
-from fastapi.middleware.cors import CORSMiddleware
-app.add_middleware(CORSMiddleware, allow_origins=["http://localhost:3000"], ...)
+### Stack
+
+Next.js 14 (App Router), Tailwind CSS, shadcn/ui, React Query
+
+```bash
+npx create-next-app@latest frontend --typescript --tailwind --app
+cd frontend && npx shadcn@latest init
 ```
-
-- Return `credits_remaining` in every `/generate` response — already done via `meta.credits_remaining`
-
-### Infra
-
-- `frontend/` directory at repo root (Next.js project)
-- `.env.local` for `NEXT_PUBLIC_API_URL`
-- Run backend and frontend as separate processes locally
 
 ### Success Criteria
 
-- [ ] User can generate text and image from browser
-- [ ] History shows last 20 requests
-- [ ] Credit balance visible
+- [ ] User can generate text from browser with real API key
+- [ ] User can generate image from browser
+- [ ] Credit balance updates after each generation
+- [ ] Empty state + error state both handled without breaking UI
+- [ ] Ships in ≤2 days
+
+---
+
+## Phase 4B — UX Completion
+
+**Goal:** Make the product feel complete for regular users.  
+**Timeline:** 3–4 days  
+**Start only after Phase 4A is working and you've used it yourself.**
+
+### New Pages
+
+| Route | Purpose |
+|-------|---------|
+| `/history` | Past requests with outputs |
+| `/settings` (full) | Provider key management (Fal, Stability) added |
+
+**`/history` page:**
+- Table from `GET /api/v1/usage` — request list with modality, model, credits, timestamp
+- Click row → expand to show output (text inline, image rendered)
+- Filter by modality (client-side filter is fine at this scale)
+- Empty state for new users
+
+**`/settings` additions:**
+- Provider key management (Fal, Stability) via `POST /api/v1/auth/provider-keys`
+- List stored provider keys via `GET /api/v1/auth/provider-keys`
+
+### Success Criteria
+
+- [ ] History shows last 20 requests with output on click
+- [ ] Provider keys can be added and listed
 - [ ] No console errors, no broken states on empty history
+- [ ] Navigation between all pages works
 
 ---
 
 ## Phase 5 — Developer Platform
 
-**Goal:** Make the API a first-class product. Developers can self-serve: explore models, manage keys, read docs, understand their usage.  
-**Timeline:** 1–1.5 weeks
+**Goal:** Make the API a first-class product. Prioritize discoverability and usability over charts.  
+**Timeline:** 1 week  
+**Rule:** No analytics charts until there is real user data to make them meaningful.**
 
-### Frontend
+### What to build first: Model Explorer + API usability
 
-**New Pages:**
-
-| Route | Purpose |
-|-------|---------|
-| `/dashboard` | Usage charts, credit burn, request volume |
-| `/models` | Model explorer — browse all active models, metadata |
-| `/docs` | Embedded API docs (Swagger or custom) |
-| `/keys` | API key display + future: multi-key management |
-
-**`/dashboard` breakdown:**
-- Total requests this month
-- Credits used vs remaining (bar or gauge)
-- Requests by modality (pie)
-- Daily request volume (line chart) — from `GET /api/v1/usage` with date range
-
-**`/models` page:**
-- Table: model_id, provider, modality, cost/unit, latency, quality score, status
-- Filter by modality
+**`/models` page (priority #1):**
+- Table: model_id, provider, modality, cost/unit, latency, quality score, active status
+- Filter by modality (Text / Image)
 - "Try it" button → redirects to `/generate` with model pre-selected
+- Data from `GET /api/v1/models`
 
-### Backend Changes
+**API usability improvements:**
+- Add `description=` and response examples to every FastAPI router and endpoint
+- This makes `/docs` (Swagger) genuinely useful — developers can test from browser
+- Add `redoc_url="/redoc"` as an alternative docs format
 
-- `GET /api/v1/usage/summary` — aggregate stats:
-  ```json
-  {
-    "total_requests": 142,
-    "total_credits_used": 3810,
-    "by_modality": { "text": 98, "image": 44 },
-    "by_provider": { "openai": 130, "fal": 12 }
-  }
-  ```
-- `GET /api/v1/usage/daily` — returns per-day counts for charting:
-  ```json
-  { "days": [{ "date": "2026-04-10", "requests": 12, "credits": 340 }, ...] }
-  ```
-- Improve error response consistency: all errors return `{ "code": "...", "message": "..." }` — audit existing handlers
+**`/dashboard` page (deferred until real usage exists):**
+- Build this only once you have actual user traffic to display
+- Placeholder: show credit balance, total request count, last 5 requests
+- Full charts (daily volume, provider breakdown) come only when they would show meaningful data
 
-### Infra
+### New Backend Endpoints
 
-- Enable FastAPI `/docs` in production (currently `docs_url="/docs"` — keep it)
-- Add `redoc_url="/redoc"` as alternative
+`GET /api/v1/usage/summary` — for the placeholder dashboard:
+```json
+{
+  "total_requests": 142,
+  "total_credits_used": 3810,
+  "by_modality": { "text": 98, "image": 44 },
+  "by_provider": { "openai": 130, "fal": 12 }
+}
+```
+
+`GET /api/v1/usage/daily` — when charts become worth building:
+```json
+{ "days": [{ "date": "2026-04-10", "requests": 12, "credits": 340 }, ...] }
+```
+
+Error response audit: verify all errors return `{ "code": "...", "message": "..." }` — this is already true for most endpoints, just verify edge cases.
 
 ### Success Criteria
 
-- [ ] Developer can see their usage broken down by provider/modality
-- [ ] Model explorer shows all active models with real metadata
-- [ ] `/docs` is publicly accessible and accurate
-- [ ] Error messages are consistent and machine-readable
+- [ ] `/models` page lists all active models with metadata
+- [ ] "Try it" pre-fills `/generate` correctly
+- [ ] `/docs` is accurate and usable by a developer who has never seen the code
+- [ ] `GET /usage/summary` returns real aggregated data
 
 ---
 
-## Phase 6 — Infrastructure & Reliability
+## Validation Milestone — Before Any Infrastructure Work
 
-**Goal:** Production-ready deployment. No more "works on my machine." Handles failures gracefully.  
-**Timeline:** 1 week
+**This checkpoint must happen before Phase 6.**
+
+**Goal:** Confirm real users find the product useful before investing in infra.
+
+**What to do:**
+- Give access to 3+ real users (developers, creators, or colleagues)
+- Watch them use `/generate` and browse `/models`
+- Note: what breaks, what confuses them, what they try to do that doesn't work
+- Check: are they actually generating things, or dropping off at login?
+
+**What this tells you before Phase 6:**
+- Whether the credit UX is clear enough (do they know why requests fail?)
+- Whether manual vs auto routing distinction makes sense to users
+- Whether any provider (OpenAI, Fal) produces errors you haven't seen yet
+- Whether `/history` is actually used or ignored
+
+**Don't skip this.** If no one uses the UI after Phase 4A + 4B, scaling infra is premature. Fix the product first.
+
+**Success criteria:**
+- [ ] ≥3 users have successfully generated at least one output
+- [ ] You have a list of observed friction points to address
+- [ ] At least one issue found that wasn't visible in solo testing
+
+---
+
+## Phase 6A — Docker + Deployment
+
+**Goal:** Reproducible environment. Backend running on a real server, accessible via domain.  
+**Timeline:** 2–3 days
 
 ### Dockerization
 
-**`docker-compose.yml` (local + staging):**
+**`Dockerfile` (backend):**
+```dockerfile
+FROM python:3.11-slim
+WORKDIR /app
+COPY requirements.txt .
+RUN pip install -r requirements.txt
+COPY . .
+CMD ["uvicorn", "app.main:app", "--host", "0.0.0.0", "--port", "8000"]
+```
+
+**`docker-compose.yml`:**
 ```yaml
 services:
   db:
@@ -186,16 +246,6 @@ services:
     ports: ["3000:3000"]
 ```
 
-**`Dockerfile` (backend):**
-```dockerfile
-FROM python:3.11-slim
-WORKDIR /app
-COPY requirements.txt .
-RUN pip install -r requirements.txt
-COPY . .
-CMD ["uvicorn", "app.main:app", "--host", "0.0.0.0", "--port", "8000"]
-```
-
 ### Environment Configs
 
 ```
@@ -208,21 +258,99 @@ Add to `config.py`:
 ```python
 ENV: str = "development"  # "staging" | "production"
 ```
-Use `ENV` to toggle: debug logging, Swagger visibility, CORS origins.
 
-### Storage: Local → S3/MinIO
+### VPS Deployment
 
-Current: `outputs/{user_id}/{request_id}/result.{ext}` on local disk.
+- **Provider:** Hetzner CX21 (~$6/mo) or DigitalOcean Droplet
+- **Reverse proxy:** Caddy (automatic HTTPS, one config file)
 
-**Migration path (no breaking changes):**
+```
+# Caddyfile
+api.syphakie.com { reverse_proxy backend:8000 }
+app.syphakie.com { reverse_proxy frontend:3000 }
+```
+
+- **Deploy process:** push to main → SSH in → `docker-compose pull && docker-compose up -d`
+
+### Success Criteria
+
+- [ ] `docker-compose up` starts entire stack from scratch on a fresh machine
+- [ ] Backend reachable at `api.syphakie.com` with HTTPS
+- [ ] Frontend reachable at `app.syphakie.com`
+- [ ] `.env.prod` is the only secret location — never in code or image
+
+---
+
+## Phase 6B — Reliability
+
+**Goal:** Graceful failure. No hanging requests, no cascade failures, no silent drops.  
+**Timeline:** 2–3 days
+
+### Rate Limiting
+
+Add `slowapi`:
+```python
+limiter = Limiter(key_func=get_api_key_from_header)
+
+@router.post("/generate")
+@limiter.limit("60/minute")
+def generate(...): ...
+```
+
+Limits:
+- `/generate`: 60 req/min per API key
+- All other endpoints: 120 req/min
+- Returns 429 with `{ "code": "RATE_LIMITED", "message": "..." }`
+
+### Retry + Fallback
+
+In `generate.py`, wrap provider call:
+```python
+for attempt in range(MAX_RETRIES):  # MAX_RETRIES = 2
+    try:
+        result = adapter.run(...)
+        break
+    except ProviderError:
+        if attempt == MAX_RETRIES - 1:
+            raise
+        time.sleep(RETRY_BACKOFF[attempt])  # [1, 3]
+```
+
+Add `FALLBACK_ON_FAILURE: bool = True` to RoutingConfig. On final failure in auto mode, re-run `_auto()` excluding the failed provider.
+
+### Timeouts
+
+Set explicit timeouts on all provider HTTP calls:
+```python
+httpx.Client(timeout=30.0)  # never hang indefinitely
+```
+
+### Success Criteria
+
+- [ ] Rate limiting returns 429 with clear message
+- [ ] Provider timeout does not hang request past 35s
+- [ ] Failed provider in auto mode triggers fallback to next-best model
+- [ ] All existing tests still pass
+
+---
+
+## Phase 6C — Storage Migration
+
+**Goal:** Outputs survive server restarts and scale beyond one machine.  
+**Timeline:** 2–3 days  
+**Start only when local disk storage becomes a real problem or before cloud deploy.**
+
+### Migration Path (no breaking changes)
+
 1. Add `STORAGE_BACKEND: str = "local"` to config (`"s3"` | `"local"`)
-2. Create `app/storage/base.py` (abstract: `save(path, data) → url`, `get_url(path) → str`)
-3. `app/storage/local.py` — current logic extracted here
-4. `app/storage/s3.py` — uses `boto3`, same interface
-5. `generate.py` calls `storage.save()` instead of writing directly
-6. Existing outputs are unaffected; new ones route to S3 when `STORAGE_BACKEND=s3`
+2. Create `app/storage/base.py` — abstract interface: `save(path, data) → url`
+3. `app/storage/local.py` — extract current logic here (no behavior change)
+4. `app/storage/s3.py` — same interface, uses `boto3`
+5. `generate.py` calls `storage.save()` instead of writing files directly
+6. Existing outputs on disk remain accessible via StaticFiles as before
 
-**MinIO for local S3-compatible testing:**
+### MinIO for Local S3 Testing
+
 ```yaml
 # add to docker-compose
 minio:
@@ -231,68 +359,24 @@ minio:
   ports: ["9000:9000", "9001:9001"]
 ```
 
-### Rate Limiting
-
-Add `slowapi` (FastAPI-native rate limiter):
-```python
-# per API key, not IP
-limiter = Limiter(key_func=get_api_key_from_header)
-
-@router.post("/generate")
-@limiter.limit("60/minute")
-def generate(...):
-```
-
-Default limits:
-- `/generate`: 60 req/min
-- All other endpoints: 120 req/min
-
-### Retry / Fallback Logic
-
-In `generate.py`, wrap provider call:
-```python
-for attempt in range(MAX_RETRIES):
-    try:
-        result = adapter.run(...)
-        break
-    except ProviderError as e:
-        if attempt == MAX_RETRIES - 1:
-            raise
-        time.sleep(RETRY_BACKOFF[attempt])
-```
-
-Add `FALLBACK_PROVIDER` to RoutingConfig: if primary fails after retries, auto-route picks next-best model.
-
 ### Success Criteria
 
-- [ ] `docker-compose up` starts entire stack from scratch
-- [ ] `.env.prod` is the only secret — never in code
-- [ ] S3 storage works when `STORAGE_BACKEND=s3`
-- [ ] Rate limiting returns 429 with clear message
-- [ ] Provider timeouts don't hang requests indefinitely
+- [ ] `STORAGE_BACKEND=local` behaves identically to current behavior
+- [ ] `STORAGE_BACKEND=s3` saves to S3 and returns accessible URL
+- [ ] Existing outputs are unaffected by the switch
+- [ ] MinIO works as a drop-in for S3 in local dev
 
 ---
 
-## Phase 7 — Scaling & Intelligence
+## Phase 7A — Caching (Redis)
 
-**Goal:** System learns from real usage. Handles load. Response times improve.  
-**Timeline:** 1–2 weeks
+**Goal:** Reduce DB load on hot read paths.  
+**Timeline:** 2 days
 
-### Smart Routing Improvements
-
-Current scoring is static weights. Upgrade to dynamic:
-
-1. **Auto-latency feedback loop** — `scripts/update_latency.py` already exists. Wire it to run every 15 min via cron or APScheduler.
-2. **Failure rate tracking** — add `failure_count_24h` column to `model_registry`. Increment on failed request. Penalize in scorer.
-3. **Cost-aware routing per user** — pass user's credit balance into scorer. Low-balance users get routed to cheaper models.
-
-### Caching
-
-**Use Redis (via `redis-py`):**
-
-- Cache `GET /api/v1/models` response for 60s (changes rarely)
-- Cache `GET /api/v1/usage/summary` per user for 30s
-- Optional: identical prompt+model → return cached output within 1h window (hash prompt+model as key)
+Cache these endpoints with Redis:
+- `GET /api/v1/models` — 60s TTL (model list changes only on admin action)
+- `GET /api/v1/usage/summary` — 30s TTL per user
+- Optional: identical prompt+model hash → return cached output within 1h
 
 ```python
 # config addition
@@ -300,57 +384,81 @@ REDIS_URL: str = "redis://localhost:6379"
 CACHE_TTL_MODELS: int = 60
 ```
 
-### Async Adapter Calls
+Add Redis to docker-compose. Use `redis-py` with a thin decorator or manual cache-aside pattern — no framework needed.
 
-Current adapters are sync (`httpx` sync). Migrate to async:
+### Success Criteria
+
+- [ ] `/models` endpoint returns cached response on repeated calls
+- [ ] Cache invalidates when admin changes model status
+- [ ] Redis down → endpoint still works (catch connection error, fall through to DB)
+
+---
+
+## Phase 7B — Async Adapters
+
+**Goal:** Remove thread-pool overhead. Generation calls are pure I/O — they should be async.  
+**Timeline:** 2–3 days
+
+Migrate providers from sync `httpx.Client` to async `httpx.AsyncClient`:
+
 ```python
 # providers/base.py
 async def run(self, prompt, params, api_key) -> AdapterResult: ...
 ```
-FastAPI supports async endpoints natively. This removes the thread-pool overhead on I/O-heavy generation calls.
 
-**Migration:** change `httpx.Client` → `httpx.AsyncClient`, `def run` → `async def run`, endpoint handlers add `async def`.
+Change endpoint handlers to `async def`. FastAPI handles this natively.
 
-### Background Jobs
-
-For long-running image generation, add async job queue:
-1. `POST /generate` returns `{ request_id, status: "queued" }` immediately
-2. Background worker processes job
-3. `GET /generate/{request_id}/status` returns current status + output when ready
-
-**Stack:** `arq` (Redis-based, async, minimal) or Celery if you need more.  
-**Start with synchronous** — add this only when generation latency exceeds 10s regularly.
+**Migration is mechanical:** find all `httpx.Client(...)` calls, replace with `async with httpx.AsyncClient(...) as client:`, add `await` to `.post()` / `.get()` calls.
 
 ### Success Criteria
 
-- [ ] Routing penalizes models with >10% failure rate in last 24h
-- [ ] Model list endpoint returns cached response under load
-- [ ] P95 generation latency improved vs Phase 3 baseline
-- [ ] Async adapters pass all existing tests
+- [ ] All existing adapter tests pass with async versions
+- [ ] No sync `httpx.Client` calls remain in providers
+- [ ] Generation endpoints are `async def`
+
+---
+
+## Phase 7C — Smart Routing Improvements
+
+**Goal:** Routing reflects real-world performance, not seed data.  
+**Timeline:** 2–3 days  
+**Build after 7A and 7B — needs real latency/failure data to be meaningful.**
+
+1. **Auto-latency feedback loop** — `scripts/update_latency.py` already exists. Wire it to APScheduler running every 15 min inside the backend process.
+
+2. **Failure rate tracking** — add `failure_count_24h` column to `model_registry`. Increment on failed request. Add penalty term in `scorer.py`: a model with >10% failure rate in 24h gets a 0.3 score penalty.
+
+3. **Cost-aware routing per user** — pass user's credit balance into `_auto()`. If balance < 100, filter to cheapest models only.
+
+### Success Criteria
+
+- [ ] Latency averages update automatically without manual script runs
+- [ ] A model with repeated failures is deprioritized in auto routing
+- [ ] Low-credit users are not routed to expensive models
 
 ---
 
 ## Phase 8 — Monetization & Access Control
 
-**Goal:** Real revenue. Users buy credits. Access controlled by plan.  
+**Goal:** Real revenue. Credit purchases, plan tiers, abuse prevention.  
 **Timeline:** 1.5–2 weeks
 
 ### Stripe Integration
 
 **Flow:**
-1. User selects credit pack on `/settings` or `/billing` page
+1. User selects credit pack on `/billing` page
 2. Frontend calls `POST /api/v1/billing/checkout` → backend creates Stripe Checkout Session → returns URL
 3. User completes Stripe payment
-4. Stripe webhook → `POST /api/v1/billing/webhook` → backend verifies signature → adds credits
+4. Stripe webhook → `POST /api/v1/billing/webhook` → verify signature → add credits
 
 **New endpoints:**
 ```
-POST /api/v1/billing/checkout   { pack_id: "1000" | "5000" | "20000" } → { checkout_url }
-POST /api/v1/billing/webhook    (Stripe sends this — verify Stripe-Signature header)
+POST /api/v1/billing/checkout   { pack_id } → { checkout_url }
+POST /api/v1/billing/webhook    Stripe sends this — verify Stripe-Signature header
 GET  /api/v1/billing/history    → list of credit purchases
 ```
 
-**Credit packs (example):**
+**Credit packs:**
 | Pack | Credits | Price |
 |------|---------|-------|
 | Starter | 1,000 | $5 |
@@ -367,13 +475,27 @@ class CreditPurchase(Base):
 
 Add `plan` column to `users`: `"free"` | `"pro"` | `"enterprise"`.
 
-| Plan | Credits/month | Rate limit | Features |
-|------|--------------|------------|---------|
-| Free | 500 | 10 req/min | Manual only |
-| Pro | 5,000 | 60 req/min | Manual + Auto |
-| Enterprise | Unlimited | Custom | All + admin features |
+| Plan | Credits/month | Rate limit | Daily cap | Features |
+|------|--------------|------------|-----------|---------|
+| Free | 500 | 10 req/min | 50 req/day | Manual only |
+| Pro | 5,000 | 60 req/min | None | Manual + Auto |
+| Enterprise | Unlimited | Custom | None | All + admin |
 
-Enforce in `deps.py` — `require_plan("pro")` dependency.
+### Abuse Protection
+
+Enforce alongside plan limits — not as a separate feature:
+
+- **Free-tier rate limit:** 10 req/min, enforced in `slowapi` via plan check in key function
+- **Daily credit cap:** free users cannot exceed 50 credits/day — check in `credits.py` before `prededuct()`
+- **Hard generation block:** if `credits_used_today >= DAILY_CAP`, return 429 with `DAILY_LIMIT_REACHED` before routing
+- **Idempotency on Stripe webhook:** store `stripe_session_id`, reject duplicate webhook events
+
+Enforce plan in `deps.py`:
+```python
+def require_plan(min_plan: str):
+    # free < pro < enterprise
+    ...
+```
 
 ### Frontend
 
@@ -386,9 +508,10 @@ New page: `/billing`
 ### Success Criteria
 
 - [ ] User can purchase credits via Stripe Checkout
-- [ ] Credits appear in balance immediately after webhook
-- [ ] Free plan users get 429 on auto routing
-- [ ] Stripe webhook handles duplicate events safely (idempotency)
+- [ ] Credits appear immediately after webhook
+- [ ] Free plan users hit daily cap and get clear error
+- [ ] Free plan users cannot use auto routing
+- [ ] Stripe webhook is idempotent (duplicate events don't double-add credits)
 
 ---
 
@@ -399,7 +522,7 @@ frontend/
 ├── app/
 │   ├── layout.tsx              # root layout, auth check
 │   ├── page.tsx                # redirect → /generate
-│   ├── login/page.tsx          # API key entry
+│   ├── login/page.tsx
 │   ├── generate/page.tsx
 │   ├── history/page.tsx
 │   ├── dashboard/page.tsx
@@ -417,35 +540,36 @@ frontend/
 │   ├── api.ts                  # typed fetch wrapper, injects X-API-Key header
 │   └── auth.ts                 # API key storage (localStorage)
 ├── hooks/
-│   ├── useGenerate.ts          # useMutation wrapper
+│   ├── useGenerate.ts
 │   ├── useHistory.ts
 │   └── useModels.ts
 └── types/
     └── api.ts                  # mirrors backend Pydantic schemas
 ```
 
-**Auth pattern:** API key stored in `localStorage`, injected as `X-API-Key` header on every request via `lib/api.ts`. No cookies, no sessions.
-
-**State management:** React Query for all server state. No Redux.
+**Auth:** API key in `localStorage`, injected as `X-API-Key` on every request via `lib/api.ts`.  
+**State:** React Query for all server state. No Redux.
 
 ---
 
 ## Backend Enhancements Summary
 
-| Enhancement | Phase | Priority |
-|-------------|-------|---------|
-| CORS middleware | 4 | Required |
-| `GET /credits/balance` | 4 | Required |
-| `GET /outputs/{id}` detail | 4 | Required |
-| `GET /usage/summary` | 5 | High |
-| `GET /usage/daily` | 5 | High |
-| Consistent error format audit | 5 | Medium |
-| Rate limiting (slowapi) | 6 | High |
-| Retry + fallback in generate.py | 6 | High |
-| Async adapters | 7 | Medium |
-| Redis cache | 7 | Medium |
-| Stripe billing endpoints | 8 | Required |
-| Plan enforcement in deps.py | 8 | Required |
+| Enhancement | Phase | Priority | Status |
+|-------------|-------|---------|--------|
+| CORS middleware | 4A | Required | To build |
+| `GET /credits` balance | — | — | Already exists |
+| `GET /outputs/{id}` detail | — | — | Already exists |
+| `GET /usage/summary` | 5 | High | To build |
+| `GET /usage/daily` | 5 | Medium | To build |
+| Error format audit | 5 | Medium | To build |
+| Rate limiting (slowapi) | 6B | High | To build |
+| Retry + fallback | 6B | High | To build |
+| Storage abstraction | 6C | Medium | To build |
+| Redis cache | 7A | Medium | To build |
+| Async adapters | 7B | Medium | To build |
+| Latency APScheduler | 7C | Medium | To build |
+| Stripe billing | 8 | Required | To build |
+| Plan + abuse enforcement | 8 | Required | To build |
 
 ---
 
@@ -453,37 +577,21 @@ frontend/
 
 ### Local Dev (Now)
 ```
-uvicorn app.main:app --reload    # backend on :8000
-npm run dev                      # frontend on :3000 (Phase 4+)
-postgres running locally         # existing setup
+uvicorn app.main:app --reload    # backend :8000
+npm run dev                      # frontend :3000 (Phase 4A+)
+postgres running locally
 ```
 
-### Dockerized (Phase 6)
+### Dockerized (Phase 6A)
 ```
-docker-compose up                # spins backend + frontend + postgres + minio
+docker-compose up    # backend + frontend + postgres
 ```
 
-### VPS Deployment (Phase 6+)
-- **Provider:** Hetzner CX21 (~$6/mo) or DigitalOcean Droplet
-- **Stack:** Docker Compose on single VPS
-- **Reverse proxy:** Caddy (automatic HTTPS)
-- **Process:** push to main → SSH deploy script pulls + restarts containers
-
-```
-# Caddy config
-api.syphakie.com {
-    reverse_proxy backend:8000
-}
-app.syphakie.com {
-    reverse_proxy frontend:3000
-}
-```
+### VPS (Phase 6A)
+Hetzner CX21 or DigitalOcean, Docker Compose, Caddy reverse proxy.
 
 ### Cloud (Optional, Phase 7+)
-- Backend → Railway or Render (auto-deploy from GitHub)
-- DB → Supabase or Railway Postgres
-- Storage → AWS S3 or Cloudflare R2
-- Only move here when VPS becomes a bottleneck
+Railway / Render for backend, Supabase for DB, Cloudflare R2 for storage. Only if VPS becomes a bottleneck.
 
 ---
 
@@ -491,19 +599,18 @@ app.syphakie.com {
 
 | Phase | Storage | Notes |
 |-------|---------|-------|
-| 1–3 (now) | Local disk | `outputs/` dir, served via StaticFiles |
-| 6 | S3/MinIO | `STORAGE_BACKEND=s3` toggle, backward-compatible |
-| 7+ | S3 + CDN | CloudFront or Cloudflare in front of S3 |
+| 1–3 (now) | Local disk | `outputs/` dir, StaticFiles |
+| 6C | S3/MinIO | `STORAGE_BACKEND=s3` toggle |
+| 7+ | S3 + CDN | Cloudflare in front of S3 |
 
 **Cleanup strategy:**
-- Add `expires_at` column to `request_records`
-- Cron job: delete outputs older than 30 days for free users, 1 year for pro
-- Script: `scripts/cleanup_outputs.py` — matches disk cleanup to DB records
+- Add `expires_at` to `request_records`
+- Script: `scripts/cleanup_outputs.py` — delete disk files matching expired DB records
+- Free users: 30-day retention. Pro: 1-year.
 
-**Request history scaling:**
-- Index `request_records` on `(user_id, created_at)` — already implied by query pattern
-- Add explicit: `CREATE INDEX idx_rr_user_created ON request_records(user_id, created_at DESC);`
-- At 1M rows: add DB partitioning by month (Postgres native, no ORM change)
+**Scaling request history:**
+- Add index: `CREATE INDEX idx_rr_user_created ON request_records(user_id, created_at DESC);`
+- At 1M rows: Postgres partitioning by month — no ORM change required
 
 ---
 
@@ -511,24 +618,21 @@ app.syphakie.com {
 
 ### API Docs
 - Swagger at `/docs` — already enabled
-- Add `description=` to every router and endpoint for clean Swagger UI
-- Add request/response examples via Pydantic `model_config = {"json_schema_extra": {...}}`
+- Add `description=` to every router for clean Swagger UI
+- Add `redoc_url="/redoc"` as alternative format
 
 ### Postman Collection
-File: `docs/syphakie.postman_collection.json`  
-Covers: auth, generate (text + image), credits, outputs, usage, admin  
+`docs/syphakie.postman_collection.json`  
 Variables: `{{base_url}}`, `{{api_key}}`  
-Export from current working curl tests.
+Covers all endpoints. Export from existing curl tests.
 
-### SDK (Phase 5+, optional)
-Start with a thin Python wrapper:
+### SDK (Optional, Phase 5+)
+Only build if external developer usage picks up:
 ```python
-# pip install syphakie
 client = SyphaKie(api_key="sk-...")
 result = client.generate(modality="text", prompt="Hello", model="gpt-4o")
-print(result.output.content)
 ```
-Single file, `requests`-based, published to PyPI. Only if API usage picks up.
+Single file, `requests`-based, PyPI.
 
 ---
 
@@ -536,43 +640,42 @@ Single file, `requests`-based, published to PyPI. Only if API usage picks up.
 
 | Phase | Focus | Duration | Cumulative |
 |-------|-------|----------|-----------|
-| 4 | Next.js UI foundation | 1.5 weeks | Week 2 |
-| 5 | Developer dashboard + usage APIs | 1 week | Week 3 |
-| 6 | Docker + S3 + rate limiting + retry | 1 week | Week 4 |
-| 7 | Caching + async + smart routing | 1.5 weeks | Week 5.5 |
-| 8 | Stripe + plans + billing UI | 1.5 weeks | Week 7 |
+| 4A | /generate + /login (core UI) | 1–2 days | Day 2 |
+| 4B | /history + full /settings | 3–4 days | Day 6 |
+| **Validation** | **3 real users, observe usage** | **ongoing** | **before Phase 6** |
+| 5 | /models + API usability | 1 week | Week 2.5 |
+| 6A | Docker + VPS deploy | 2–3 days | Week 3 |
+| 6B | Rate limiting + retry + fallback | 2–3 days | Week 3.5 |
+| 6C | Storage abstraction + S3 | 2–3 days | Week 4 |
+| 7A | Redis caching | 2 days | Week 4.5 |
+| 7B | Async adapters | 2–3 days | Week 5 |
+| 7C | Smart routing improvements | 2–3 days | Week 5.5 |
+| 8 | Stripe + plans + abuse protection | 1.5–2 weeks | Week 7.5 |
 
-**Total: ~7 weeks solo to full monetized product.**
+**Total: ~7.5 weeks solo to full monetized product.**
 
 ---
 
 ## START HERE
 
-These are your next 5 concrete actions after reading this plan:
-
-### 1. Add CORS + two missing endpoints (30 min)
-```python
-# app/main.py — add CORSMiddleware
-# app/api/credits.py — add GET /credits/balance
-# app/api/outputs.py — add GET /outputs/{request_id} detail
-```
+### 1. Add CORS middleware (15 min)
+In `app/main.py`, add `CORSMiddleware` allowing `http://localhost:3000`. This unblocks all frontend work.
 
 ### 2. Initialize Next.js project (20 min)
 ```bash
-cd frontend
-npx create-next-app@latest . --typescript --tailwind --app
-npx shadcn@latest init
+npx create-next-app@latest frontend --typescript --tailwind --app
+cd frontend && npx shadcn@latest init
 ```
 
-### 3. Build `lib/api.ts` — the API client (1 hour)
-Typed wrapper around fetch. Every hook and page uses this. Get auth right here and everything else follows.
+### 3. Build `lib/api.ts` (1 hour)
+Typed fetch wrapper that reads API key from localStorage and injects `X-API-Key` header. Every hook depends on this — get it right first.
 
 ### 4. Build `/generate` page (half day)
-This is the core value. Ship it working before any other page. Text first, image second.
+Text generation first, image second. Ship Phase 4A complete before moving to /history or /settings.
 
-### 5. Run `docker-compose up` with a basic Dockerfile (1 hour)
-Do this early so you never have "works on my machine" issues. Lock the environment before adding complexity.
+### 5. Use it yourself before Phase 4B (1 day of dogfooding)
+Generate 20 things. Notice what's annoying. Fix the worst two issues. Then build /history.
 
 ---
 
-*Last updated: 2026-04-17 | Backend: Phases 1–3 complete | Next: Phase 4*
+*Last updated: 2026-04-17 | Backend: Phases 1–3 complete | Next: Phase 4A*
