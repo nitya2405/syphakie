@@ -10,6 +10,8 @@ class AdapterRequest:
     model_id: str
     params: dict[str, Any]
     api_key: str
+    image_url: str | None = None
+    file_url: str | None = None
 
 
 @dataclass

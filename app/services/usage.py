@@ -16,6 +16,7 @@ class UsageService:
         unit_type: str,
         cost_per_unit: float,
         credits_charged: int,
+        estimated_credits: int | None = None,
     ) -> None:
         entry = UsageLog(
             request_id=request_id,
@@ -26,6 +27,7 @@ class UsageService:
             unit_type=unit_type,
             cost_per_unit=cost_per_unit,
             credits_charged=credits_charged,
+            estimated_credits=estimated_credits,
         )
         self.db.add(entry)
         self.db.commit()

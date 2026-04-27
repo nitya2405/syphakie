@@ -4,4 +4,7 @@ from app.models.credit import Credit
 from app.models.model_registry import ModelRegistry
 from app.models.request_record import RequestRecord
 from app.models.usage_log import UsageLog
-from app.models.user_provider_key import UserProviderKey
+from app.models.job import Job
+from app.models.telegram_connection import TelegramConnection
+from app.models.telegram_auth_token import TelegramAuthToken
+from app.models.telegram_state import TelegramState

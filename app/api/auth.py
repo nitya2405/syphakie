@@ -1,5 +1,6 @@
 import hashlib
 import secrets
+from datetime import datetime, timedelta, timezone
 from fastapi import APIRouter, Depends, HTTPException
 from sqlalchemy.orm import Session
 from pydantic import BaseModel, EmailStr
@@ -8,18 +9,11 @@ from app.api.deps import get_current_user, get_db
 from app.models.user import User
 from app.models.api_key import ApiKey
 from app.models.credit import Credit
-from app.services.provider_keys import ProviderKeyService
 from app.config import settings
 
 router = APIRouter()
 
 pwd_context = CryptContext(schemes=["bcrypt"], deprecated="auto")
-
-# Providers users can store keys for
-SUPPORTED_PROVIDERS = {
-    "openai", "fal", "stability", "anthropic",
-    "google", "xai", "elevenlabs", "qwen",
-}
 
 
 # ── Helpers ──────────────────────────────────────────────────────────────────
@@ -158,36 +152,104 @@ def update_profile(
     }
 
 
-# ── Provider Keys ─────────────────────────────────────────────────────────────
+# ── API Key Management ────────────────────────────────────────────────────────
 
-class ProviderKeyRequest(BaseModel):
-    provider: str
-    api_key: str
+class CreateKeyRequest(BaseModel):
+    name: str = "My Key"
+    scope: str | None = None        # null = all modalities
+    expires_days: int | None = None  # null = never
 
 
-@router.post("/auth/provider-keys")
-def store_provider_key(
-    body: ProviderKeyRequest,
+@router.post("/auth/keys")
+def create_api_key(
+    body: CreateKeyRequest,
     current_user: User = Depends(get_current_user),
     db: Session = Depends(get_db),
 ):
-    if body.provider not in SUPPORTED_PROVIDERS:
-        raise HTTPException(status_code=400, detail={
-            "code": "UNSUPPORTED_PROVIDER",
-            "message": f"Supported providers: {sorted(SUPPORTED_PROVIDERS)}",
-        })
-    ProviderKeyService(db).upsert(
+    raw_key = _generate_api_key()
+    expires_at = None
+    if body.expires_days:
+        expires_at = datetime.now(timezone.utc) + timedelta(days=body.expires_days)
+
+    key = ApiKey(
         user_id=current_user.id,
-        provider=body.provider,
-        api_key=body.api_key,
+        key_hash=_hash_key(raw_key),
+        key_prefix=raw_key[:8],
+        key_value=raw_key,
+        name=body.name,
+        scope=body.scope,
+        expires_at=expires_at,
     )
-    return {"provider": body.provider, "stored": True}
+    db.add(key)
+    db.commit()
+    return {
+        "key": raw_key,
+        "id": str(key.id),
+        "name": key.name,
+        "prefix": key.key_prefix,
+        "scope": key.scope,
+        "expires_at": key.expires_at.isoformat() if key.expires_at else None,
+    }
 
 
-@router.get("/auth/provider-keys")
-def list_provider_keys(
+@router.get("/auth/keys")
+def list_api_keys(
     current_user: User = Depends(get_current_user),
     db: Session = Depends(get_db),
 ):
-    providers = ProviderKeyService(db).list_providers(current_user.id)
-    return {"providers": providers}
+    keys = db.query(ApiKey).filter_by(user_id=current_user.id, is_active=True).order_by(ApiKey.created_at.desc()).all()
+    return {
+        "keys": [
+            {
+                "id": str(k.id),
+                "name": k.name or k.label,
+                "prefix": k.key_prefix,
+                "scope": k.scope,
+                "last_used": k.last_used.isoformat() if k.last_used else None,
+                "expires_at": k.expires_at.isoformat() if k.expires_at else None,
+                "created_at": k.created_at.isoformat(),
+            }
+            for k in keys
+        ]
+    }
+
+
+@router.post("/auth/keys/{key_id}/rotate")
+def rotate_api_key(
+    key_id: str,
+    current_user: User = Depends(get_current_user),
+    db: Session = Depends(get_db),
+):
+    key = db.query(ApiKey).filter_by(id=key_id, user_id=current_user.id, is_active=True).first()
+    if not key:
+        raise HTTPException(status_code=404, detail={"code": "NOT_FOUND", "message": "Key not found."})
+
+    key.is_active = False
+
+    raw_key = _generate_api_key()
+    new_key = ApiKey(
+        user_id=current_user.id,
+        key_hash=_hash_key(raw_key),
+        key_prefix=raw_key[:8],
+        key_value=raw_key,
+        name=key.name,
+        scope=key.scope,
+        expires_at=key.expires_at,
+    )
+    db.add(new_key)
+    db.commit()
+    return {"key": raw_key, "id": str(new_key.id), "prefix": new_key.key_prefix}
+
+
+@router.delete("/auth/keys/{key_id}")
+def revoke_api_key(
+    key_id: str,
+    current_user: User = Depends(get_current_user),
+    db: Session = Depends(get_db),
+):
+    key = db.query(ApiKey).filter_by(id=key_id, user_id=current_user.id).first()
+    if not key:
+        raise HTTPException(status_code=404, detail={"code": "NOT_FOUND"})
+    key.is_active = False
+    db.commit()
+    return {"ok": True}

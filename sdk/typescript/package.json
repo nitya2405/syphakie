@@ -1,0 +1,27 @@
+{
+  "name": "syphakie",
+  "version": "0.1.0",
+  "description": "SyphaKie TypeScript/Node SDK — unified AI model aggregator",
+  "main": "dist/index.js",
+  "types": "dist/index.d.ts",
+  "exports": {
+    ".": {
+      "import": "./dist/index.js",
+      "require": "./dist/index.cjs",
+      "types": "./dist/index.d.ts"
+    }
+  },
+  "scripts": {
+    "build": "tsc",
+    "dev": "tsc --watch"
+  },
+  "files": ["dist"],
+  "keywords": ["ai", "llm", "image-generation", "aggregator", "syphakie"],
+  "license": "MIT",
+  "devDependencies": {
+    "typescript": "^5.4.0"
+  },
+  "peerDependencies": {
+    "typescript": ">=5.0.0"
+  }
+}

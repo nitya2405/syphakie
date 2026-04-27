@@ -1,11 +1,46 @@
 import os
-from fastapi import APIRouter, Depends, HTTPException
+import uuid
+import shutil
+from fastapi import APIRouter, Depends, HTTPException, UploadFile, File
 from sqlalchemy.orm import Session
 from app.api.deps import get_current_user, get_db
 from app.models.user import User
 from app.config import settings
 
 router = APIRouter()
+
+
+@router.post("/outputs/upload")
+async def upload_file(
+    file: UploadFile = File(...),
+    current_user: User = Depends(get_current_user),
+):
+    """Upload a file to the platform and get a temporary URL."""
+    user_id = str(current_user.id)
+    file_id = str(uuid.uuid4())
+    ext = file.filename.split(".")[-1].lower() if "." in file.filename else ""
+    
+    # Simple validation
+    allowed_exts = {
+        "png", "jpg", "jpeg", "webp", "gif", # images
+        "mp3", "wav", "ogg", "m4a",         # audio
+        "mp4", "webm", "mov",                # video
+        "pdf", "doc", "docx", "txt",         # docs
+    }
+    if ext not in allowed_exts:
+        raise HTTPException(status_code=400, detail=f"File extension '.{ext}' not allowed.")
+
+    upload_dir = os.path.join(settings.OUTPUT_DIR, "uploads", user_id)
+    os.makedirs(upload_dir, exist_ok=True)
+    
+    filename = f"{file_id}.{ext}" if ext else file_id
+    file_path = os.path.join(upload_dir, filename)
+    
+    with open(file_path, "wb") as buffer:
+        shutil.copyfileobj(file.file, buffer)
+        
+    url = f"{settings.BASE_URL}/files/uploads/{user_id}/{filename}"
+    return {"url": url, "filename": file.filename}
 
 
 @router.get("/outputs/{request_id}")

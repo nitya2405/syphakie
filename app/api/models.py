@@ -1,4 +1,5 @@
 from fastapi import APIRouter, Depends
+from sqlalchemy import or_
 from sqlalchemy.orm import Session
 from app.api.deps import get_current_user, get_db
 from app.models.model_registry import ModelRegistry
@@ -13,6 +14,7 @@ def _serialize(m: ModelRegistry, full: bool = False) -> dict:
         "provider": m.provider,
         "modality": m.modality,
         "task_type": m.task_type,
+        "task_types": m.task_types or ([m.task_type] if m.task_type else []),
         "vendor": m.vendor,
         "display_name": m.display_name,
         "cost_per_unit": float(m.cost_per_unit),
@@ -33,12 +35,16 @@ def list_all_models(
     current_user: User = Depends(get_current_user),
     db: Session = Depends(get_db),
 ):
-    """All models (active and inactive) for the model explorer."""
     query = db.query(ModelRegistry)
     if modality:
         query = query.filter(ModelRegistry.modality == modality)
     if task_type:
-        query = query.filter(ModelRegistry.task_type == task_type)
+        query = query.filter(
+            or_(
+                ModelRegistry.task_type == task_type,
+                ModelRegistry.task_types.contains([task_type]),
+            )
+        )
 
     models = query.order_by(ModelRegistry.modality, ModelRegistry.provider).all()
     return {"models": [_serialize(m, full=True) for m in models]}
@@ -51,7 +57,6 @@ def list_active_models(
     current_user: User = Depends(get_current_user),
     db: Session = Depends(get_db),
 ):
-    """Active models for the generate dropdown."""
     query = db.query(ModelRegistry).filter(ModelRegistry.is_active == True)
     if modality:
         query = query.filter(ModelRegistry.modality == modality)

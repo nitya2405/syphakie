@@ -17,4 +17,5 @@ class UsageLog(Base):
     unit_type = Column(String, nullable=False)
     cost_per_unit = Column(Numeric(10, 6), nullable=False)   # snapshot at time of use
     credits_charged = Column(Integer, nullable=False)
+    estimated_credits = Column(Integer, nullable=True)
     created_at = Column(DateTime(timezone=True), server_default=func.now(), nullable=False)

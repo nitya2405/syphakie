@@ -25,6 +25,7 @@ ADAPTER_REGISTRY: dict[str, type[BaseAdapter]] = {
     "wan":         FalAdapter,
     "bytedance":   FalAdapter,
     "runway":      FalAdapter,
+    "topaz":       FalAdapter,
 }
 
 

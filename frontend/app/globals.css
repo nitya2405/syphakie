@@ -1,3 +1,68 @@
 @tailwind base;
 @tailwind components;
 @tailwind utilities;
+
+/* ── Theme System ─────────────────────────────────────────────────────────────
+   :root = Dark Mode (default)
+   html.light = Light Mode (butter yellow)                                   */
+
+:root {
+  --bg:           #0B0B0F;
+  --surface:      #12131A;
+  --surface-2:    #1A1B24;
+  --surface-3:    #22242F;
+  --border:       #1E1F28;
+  --border-2:     #2A2C38;
+  --text-primary: #FFFFFF;
+  --text-secondary: #E4E4E7;
+  --text-muted:   #C7C7CC;
+  --text-faint:   #71717A;
+  --sidebar:      #111113;
+  --hover:        #1A1B24;
+  --scrollbar:    #2A2C38;
+  --scrollbar-hover: #3A3D4A;
+}
+
+html.light {
+  /* Surfaces */
+  --bg:              #f8f9ff;
+  --surface:         #ffffff;
+  --surface-2:       #eff4ff;
+  --surface-3:       #e5eeff;
+  --surface-dim:     #cbdbf5;
+  --border:          #dce9ff;
+  --border-2:        #c7c4d7;
+  
+  /* Text / On-Surfaces */
+  --text-primary:    #0b1c30;
+  --text-secondary:  #464554;
+  --text-muted:      #5c647a;
+  --text-faint:      #767586;
+  
+  /* Brand */
+  --primary:         #4648d4;
+  --primary-con:     #6063ee;
+  --on-primary:      #ffffff;
+  
+  /* Functional */
+  --sidebar:         #f8f9ff;
+  --hover:           #e5eeff;
+  --scrollbar:       #cbdbf5;
+  --scrollbar-hover: #b8c9e5;
+}
+
+body {
+  background-color: var(--bg);
+  color: var(--text-primary);
+  font-family: 'Inter', sans-serif;
+}
+
+/* ── Scrollbar ───────────────────────────────────────────────────────────────*/
+* {
+  scrollbar-width: thin;
+  scrollbar-color: var(--scrollbar) transparent;
+}
+*::-webkit-scrollbar        { width: 6px; height: 6px; }
+*::-webkit-scrollbar-track  { background: transparent; }
+*::-webkit-scrollbar-thumb  { background-color: var(--scrollbar); border-radius: 3px; }
+*::-webkit-scrollbar-thumb:hover { background-color: var(--scrollbar-hover); }

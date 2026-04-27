@@ -15,8 +15,11 @@ class ApiKey(Base):
     key_prefix = Column(String, nullable=False)              # first 8 chars for display
     key_value = Column(String, nullable=True)                # plaintext — needed for account page reveal
     label = Column(String, nullable=True)
+    name = Column(String, nullable=True)           # user-facing key name
     is_active = Column(Boolean, nullable=False, default=True)
     last_used = Column(DateTime(timezone=True), nullable=True)
+    expires_at = Column(DateTime(timezone=True), nullable=True)
+    scope = Column(String, nullable=True)          # null = all; "text", "image", etc.
     created_at = Column(DateTime(timezone=True), server_default=func.now(), nullable=False)
 
     user = relationship("User", back_populates="api_keys")

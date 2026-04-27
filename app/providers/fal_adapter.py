@@ -21,6 +21,9 @@ class FalAdapter(BaseAdapter):
             "num_images": 1,
             "image_size": request.params.get("image_size", "square_hd"),
         }
+        if request.image_url:
+            payload["image_url"] = request.image_url
+            
         url = f"https://fal.run/{request.model_id}"
         try:
             async with httpx.AsyncClient(timeout=120) as client:
@@ -51,8 +54,11 @@ class FalAdapter(BaseAdapter):
         payload.update({k: v for k, v in request.params.items() if k != "image_url"})
 
         # image_to_video models also accept an image_url
-        if "image_url" in request.params:
+        if request.image_url:
+            payload["image_url"] = request.image_url
+        elif "image_url" in request.params:
             payload["image_url"] = request.params["image_url"]
+
 
         url = f"https://fal.run/{request.model_id}"
         try:
@@ -85,12 +91,15 @@ class FalAdapter(BaseAdapter):
 
         return AdapterResponse(
             content=None, file_bytes=file_bytes, file_extension="mp4",
-            units_used=1, unit_type="video", raw_response=data,
+            units_used=1, unit_type="generation", raw_response=data,
         )
 
     async def _audio(self, request: AdapterRequest) -> AdapterResponse:
         payload = {"prompt": request.prompt}
         payload.update(request.params)
+
+        if request.file_url:
+            payload["audio_url"] = request.file_url
 
         url = f"https://fal.run/{request.model_id}"
         try:
@@ -127,5 +136,5 @@ class FalAdapter(BaseAdapter):
 
         return AdapterResponse(
             content=None, file_bytes=file_bytes, file_extension=ext,
-            units_used=1, unit_type="audio", raw_response=data,
+            units_used=1, unit_type="generation", raw_response=data,
         )

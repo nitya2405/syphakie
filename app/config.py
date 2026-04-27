@@ -12,9 +12,16 @@ class Settings(BaseSettings):
     XAI_API_KEY: str = ""
     ELEVENLABS_API_KEY: str = ""
     QWEN_API_KEY: str = ""
+    FAL_API_KEY: str = ""
     OUTPUT_DIR: str = "outputs"
     BASE_URL: str = "http://localhost:8000"
     DEFAULT_CREDITS: int = 1000
+
+    # Telegram
+    TELEGRAM_BOT_TOKEN: str = ""
+    TELEGRAM_BOT_USERNAME: str = ""        # e.g. "SyphaKieBot" (no @)
+    TELEGRAM_WEBHOOK_URL: str = ""         # if set → webhook mode; else long-polling
+    TELEGRAM_WEBHOOK_SECRET: str = ""      # optional HMAC header for webhook verification
 
 
 settings = Settings()

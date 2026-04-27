@@ -3,12 +3,19 @@ from typing import Any
 
 
 class GenerateRequest(BaseModel):
-    modality: str           # "text" | "image"
-    mode: str               # "manual" only for now
+    modality: str           # "text" | "image" | "video" | "audio"
+    mode: str               # "manual" | "auto" | "best" | "budget"
     prompt: str
+    image_url: str | None = None
+    file_url: str | None = None
     model: str | None = None
     provider: str | None = None
+    task_type: str | None = None
+    max_cost: float | None = None   # for mode=budget: max cost_per_unit ceiling
+    use_cache: bool = True
     params: dict[str, Any] = {}
+    use_org_credits: bool = False
+    async_job: bool = False
 
     @field_validator("modality")
     @classmethod
@@ -20,8 +27,8 @@ class GenerateRequest(BaseModel):
     @field_validator("mode")
     @classmethod
     def validate_mode(cls, v):
-        if v not in ("manual", "auto"):
-            raise ValueError("mode must be 'manual' or 'auto'")
+        if v not in ("manual", "auto", "best", "budget"):
+            raise ValueError("mode must be 'manual', 'auto', 'best', or 'budget'")
         return v
 
 
@@ -39,6 +46,7 @@ class MetaSchema(BaseModel):
     units_used: float
     unit_type: str
     routing_mode: str
+    fallback_provider: str | None = None
 
 
 class GenerateResponse(BaseModel):

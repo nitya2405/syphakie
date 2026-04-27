@@ -1,8 +1,12 @@
+from datetime import datetime, timezone, timedelta
 from fastapi import APIRouter, Depends, HTTPException
+from sqlalchemy import distinct
 from sqlalchemy.orm import Session
-from pydantic import BaseModel
+from pydantic import BaseModel, ConfigDict
 from app.api.deps import require_admin, get_db
 from app.models.model_registry import ModelRegistry
+from app.models.notification import Notification
+from app.models.request_record import RequestRecord
 from app.models.user import User
 
 router = APIRouter()
@@ -74,4 +78,89 @@ def update_model(
         "avg_latency_ms": model.avg_latency_ms,
         "is_active": model.is_active,
         "cost_per_unit": float(model.cost_per_unit),
+    }
+
+
+class DeprecateRequest(BaseModel):
+    model_config = ConfigDict(protected_namespaces=())
+    successor_model_id: str | None = None
+    message: str | None = None
+
+
+@router.post("/admin/models/{model_id}/deprecate")
+def deprecate_model(
+    model_id: str,
+    body: DeprecateRequest,
+    admin: User = Depends(require_admin),
+    db: Session = Depends(get_db),
+):
+    model = db.query(ModelRegistry).filter_by(model_id=model_id).first()
+    if not model:
+        raise HTTPException(status_code=404, detail="Model not found")
+
+    model.is_active = False
+    db.commit()
+
+    cutoff = datetime.now(timezone.utc) - timedelta(days=30)
+    affected_users = (
+        db.query(distinct(RequestRecord.user_id))
+        .filter(RequestRecord.model_id == model_id, RequestRecord.created_at >= cutoff)
+        .all()
+    )
+
+    successor_text = f" We recommend switching to {body.successor_model_id}." if body.successor_model_id else ""
+    note_body = body.message or f"{model.display_name} has been deprecated.{successor_text}"
+
+    for (uid,) in affected_users:
+        notif = Notification(
+            user_id=uid,
+            type="model_deprecated",
+            title=f"Model deprecated: {model.display_name}",
+            body=note_body,
+            link="/models",
+        )
+        db.add(notif)
+    db.commit()
+
+    return {"ok": True, "users_notified": len(affected_users), "successor": body.successor_model_id}
+
+
+class ResellerConfig(BaseModel):
+    user_id: str
+    credit_markup_pct: float = 0.0   # markup percent on top of base price
+    monthly_quota: int | None = None
+
+
+@router.post("/admin/resellers")
+def configure_reseller(
+    body: ResellerConfig,
+    admin: User = Depends(require_admin),
+    db: Session = Depends(get_db),
+):
+    user = db.query(User).filter_by(id=body.user_id).first()
+    if not user:
+        raise HTTPException(status_code=404, detail="User not found")
+    user.role = "reseller"
+    db.commit()
+    return {"ok": True, "user_id": body.user_id, "role": "reseller"}
+
+
+@router.get("/admin/users")
+def list_users(
+    limit: int = 50,
+    admin: User = Depends(require_admin),
+    db: Session = Depends(get_db),
+):
+    users = db.query(User).order_by(User.created_at.desc()).limit(limit).all()
+    return {
+        "users": [
+            {
+                "id": str(u.id),
+                "email": u.email,
+                "name": u.name,
+                "role": u.role,
+                "created_at": u.created_at.isoformat() if u.created_at else None,
+            }
+            for u in users
+        ]
     }
