@@ -13,13 +13,24 @@ router = Router()
 async def cmd_help(message: Message):
     await message.answer(
         "*SyphaKie Bot — Commands*\n\n"
-        "/generate — Run an AI generation\n"
+        "⚡ *Quick generate*\n"
+        "/q \\[prompt\\]  — Generate text \\(auto model\\)\n"
+        "/img \\[prompt\\] — Generate image \\(auto model\\)\n\n"
+        "🎛 *Full flow*\n"
+        "/generate — Choose modality, model \\+ prompt\n\n"
+        "📊 *Account*\n"
         "/profile  — View your account\n"
         "/credits  — Check credit balance\n"
-        "/history  — Last 5 generations\n"
+        "/usage    — Generation stats\n"
+        "/topup    — Add more credits\n"
+        "/history  — Last 5 generations\n\n"
+        "⚙️ *Settings*\n"
+        "/setdefault \\[modality\\] \\[model\\] — Set default model\n\n"
+        "🔧 *Other*\n"
         "/cancel   — Cancel current operation\n"
         "/logout   — Disconnect Telegram\n"
-        "/help     — Show this message"
+        "/help     — Show this message\n\n"
+        "💡 You can also send a *voice message* or *photo* anytime\\!"
     )
 
 

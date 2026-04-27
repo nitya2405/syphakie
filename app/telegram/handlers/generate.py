@@ -133,19 +133,21 @@ async def do_confirm(cb: CallbackQuery, state: FSMContext, db: Session):
         return
 
     modality: str  = data["modality"]
-    model_id: str  = data["model_id"]
-    provider: str  = data["provider"]
+    model_id: str | None = data.get("model_id")
+    provider: str | None = data.get("provider")
     prompt: str    = data["prompt"]
+    image_url: str | None = data.get("image_url")
 
     from app.schemas.generate import GenerateRequest
 
     request = GenerateRequest(
         modality=modality,
-        mode="manual",
+        mode="manual" if model_id else "auto",
         prompt=prompt,
         model=model_id,
         provider=provider,
-        async_job=False,  # we manage async manually below
+        image_url=image_url,
+        async_job=False,
     )
 
     if modality in _ASYNC_MODALITIES:
@@ -234,21 +236,21 @@ async def _run_sync(cb: CallbackQuery, db: Session, user, request, modality: str
     }
     text = msg.generation_complete(payload)
     url = result.output.url
+    kb = keyboards.rate_kb(result.request_id)
 
     try:
         if url and modality == "image":
-            await cb.message.answer_photo(url, caption=text[:1024])
+            await cb.message.answer_photo(url, caption=text[:1024], reply_markup=kb)
             await cb.message.delete()
         elif url and modality in ("video", "audio"):
-            # Shouldn't reach here (async path handles these), but safe fallback
-            await cb.message.edit_text(text + f"\n[Open]({url})")
+            await cb.message.edit_text(text + f"\n[Open]({url})", reply_markup=kb)
         else:
-            await cb.message.edit_text(text)
+            await cb.message.edit_text(text, reply_markup=kb)
     except Exception as send_err:
         logger.warning("Failed to send result message: %s", send_err)
-        # Fall back to plain text with URL
         await cb.message.edit_text(
-            text + (f"\n\n[View output]({url})" if url else "")
+            text + (f"\n\n[View output]({url})" if url else ""),
+            reply_markup=kb,
         )
 
 

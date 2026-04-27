@@ -1,5 +1,6 @@
 import secrets
 from datetime import datetime, timezone, timedelta
+from sqlalchemy import func
 from sqlalchemy.orm import Session
 from app.models.user import User
 from app.models.telegram_connection import TelegramConnection
@@ -117,6 +118,61 @@ def clear_state(db: Session, user_id) -> None:
 
 
 # ── Balance & data helpers ────────────────────────────────────────────────────
+
+def get_all_active_connections(db: Session) -> list[TelegramConnection]:
+    return db.query(TelegramConnection).filter_by(is_active=True).all()
+
+
+def get_preferences(db: Session, user_id) -> dict:
+    conn = db.query(TelegramConnection).filter_by(user_id=user_id, is_active=True).first()
+    if not conn:
+        return {}
+    return conn.preferences or {}
+
+
+def set_preference(db: Session, user_id, key: str, value: str) -> None:
+    conn = db.query(TelegramConnection).filter_by(user_id=user_id, is_active=True).first()
+    if not conn:
+        return
+    prefs = dict(conn.preferences or {})
+    prefs[key] = value
+    conn.preferences = prefs
+    db.commit()
+
+
+def get_usage_stats(db: Session, user_id) -> dict:
+    now = datetime.now(timezone.utc)
+    today = now.replace(hour=0, minute=0, second=0, microsecond=0)
+    month_start = today.replace(day=1)
+
+    base = db.query(RequestRecord).filter(
+        RequestRecord.user_id == user_id,
+        RequestRecord.status == "success",
+    )
+    total_req = base.count()
+    total_cr = base.with_entities(func.coalesce(func.sum(RequestRecord.credits_deducted), 0)).scalar()
+    today_req = base.filter(RequestRecord.created_at >= today).count()
+    today_cr = base.filter(RequestRecord.created_at >= today).with_entities(
+        func.coalesce(func.sum(RequestRecord.credits_deducted), 0)
+    ).scalar()
+    month_req = base.filter(RequestRecord.created_at >= month_start).count()
+    month_cr = base.filter(RequestRecord.created_at >= month_start).with_entities(
+        func.coalesce(func.sum(RequestRecord.credits_deducted), 0)
+    ).scalar()
+
+    rows = base.with_entities(RequestRecord.modality, func.count()).group_by(RequestRecord.modality).all()
+    by_modality = {r[0] or "unknown": r[1] for r in rows}
+
+    return {
+        "total_requests": total_req,
+        "total_credits": int(total_cr),
+        "today_requests": today_req,
+        "today_credits": int(today_cr),
+        "month_requests": month_req,
+        "month_credits": int(month_cr),
+        "by_modality": by_modality,
+    }
+
 
 def get_balance(db: Session, user_id) -> int:
     credit = db.query(Credit).filter_by(user_id=user_id).first()

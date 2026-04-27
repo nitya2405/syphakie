@@ -1,5 +1,5 @@
 from sqlalchemy import Column, String, Boolean, DateTime, BigInteger
-from sqlalchemy.dialects.postgresql import UUID
+from sqlalchemy.dialects.postgresql import UUID, JSONB
 from sqlalchemy.sql import func
 import uuid
 from app.db.session import Base
@@ -14,3 +14,4 @@ class TelegramConnection(Base):
     username = Column(String, nullable=True)
     is_active = Column(Boolean, nullable=False, default=True)
     connected_at = Column(DateTime(timezone=True), server_default=func.now(), nullable=False)
+    preferences = Column(JSONB, nullable=False, server_default="{}")

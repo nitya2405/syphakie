@@ -28,29 +28,39 @@ async def start_bot(token: str, webhook_url: str = "", webhook_secret: str = "")
     )
     _dp = Dispatcher(storage=MemoryStorage())
 
-    # Inject DB session into every update
+    # Inject DB session into every update type
     from app.telegram.middleware import DbSessionMiddleware
     mw = DbSessionMiddleware()
     _dp.message.middleware(mw)
     _dp.callback_query.middleware(mw)
+    _dp.inline_query.middleware(mw)
 
-    # Register handler routers
+    # Register handler routers (order matters: specific before catch-all)
     from app.telegram.handlers import auth, profile, history, misc, generate as gen_h
+    from app.telegram.handlers import quick, media, inline as inline_h
     _dp.include_router(auth.router)
     _dp.include_router(gen_h.router)
+    _dp.include_router(quick.router)
+    _dp.include_router(media.router)
     _dp.include_router(profile.router)
     _dp.include_router(history.router)
     _dp.include_router(misc.router)
+    _dp.include_router(inline_h.router)
 
     from aiogram.types import BotCommand
     await _bot.set_my_commands([
-        BotCommand(command="generate",  description="Run AI generation"),
-        BotCommand(command="credits",   description="Check balance"),
-        BotCommand(command="profile",   description="View account"),
-        BotCommand(command="history",   description="Recent generations"),
-        BotCommand(command="help",      description="All commands"),
-        BotCommand(command="cancel",    description="Cancel current action"),
-        BotCommand(command="logout",    description="Disconnect Telegram"),
+        BotCommand(command="q",           description="Quick text generation"),
+        BotCommand(command="img",         description="Quick image generation"),
+        BotCommand(command="generate",    description="Full generation flow"),
+        BotCommand(command="credits",     description="Check balance"),
+        BotCommand(command="usage",       description="Generation stats"),
+        BotCommand(command="topup",       description="Add more credits"),
+        BotCommand(command="profile",     description="View account"),
+        BotCommand(command="history",     description="Recent generations"),
+        BotCommand(command="setdefault",  description="Set default model per modality"),
+        BotCommand(command="cancel",      description="Cancel current action"),
+        BotCommand(command="logout",      description="Disconnect Telegram"),
+        BotCommand(command="help",        description="All commands"),
     ])
 
     if webhook_url:

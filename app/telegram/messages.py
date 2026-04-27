@@ -152,6 +152,35 @@ def generation_failed(payload: dict) -> str:
     return f"❌ *Generation failed*\n\n`{error[:200]}`\n\nUse the button below to retry\\."
 
 
+def usage_stats(stats: dict) -> str:
+    icons = {"text": "📝", "image": "🖼", "video": "🎬", "audio": "🎵"}
+    by_mod = stats.get("by_modality", {})
+    mod_lines = "\n".join(
+        f"  {icons.get(k, '⚡')} {k}: *{v}*"
+        for k, v in by_mod.items()
+    ) or "  None yet"
+    return (
+        f"📊 *Usage Stats*\n\n"
+        f"*Today*\n"
+        f"  Requests: *{stats['today_requests']}*\n"
+        f"  Credits: *{stats['today_credits']:,}*\n\n"
+        f"*This month*\n"
+        f"  Requests: *{stats['month_requests']}*\n"
+        f"  Credits: *{stats['month_credits']:,}*\n\n"
+        f"*All time*\n"
+        f"  Requests: *{stats['total_requests']}*\n"
+        f"  Credits: *{stats['total_credits']:,}*\n\n"
+        f"*By modality*\n{mod_lines}"
+    )
+
+
+def set_default_ok(modality: str, model_id: str) -> str:
+    return (
+        f"✅ Default *{modality}* model set to `{_esc(model_id)}`\\.\n\n"
+        f"Quick commands \\(/q, /img\\) will now use this model\\."
+    )
+
+
 def credits_low(payload: dict) -> str:
     balance = payload.get("balance", 0)
     return (

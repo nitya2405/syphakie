@@ -47,6 +47,14 @@ def retry_kb() -> InlineKeyboardMarkup:
     ])
 
 
+def rate_kb(request_id: str) -> InlineKeyboardMarkup:
+    return InlineKeyboardMarkup(inline_keyboard=[[
+        InlineKeyboardButton(text="👍", callback_data=f"rate:up:{request_id}"),
+        InlineKeyboardButton(text="👎", callback_data=f"rate:dn:{request_id}"),
+        InlineKeyboardButton(text="🔄 Again", callback_data="gen:start"),
+    ]])
+
+
 def logout_kb() -> InlineKeyboardMarkup:
     return InlineKeyboardMarkup(inline_keyboard=[
         [
